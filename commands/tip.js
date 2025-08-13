@@ -1,6 +1,6 @@
 import { SlashCommandBuilder } from "discord.js";
 import Wallet from "../database/models/wallet.js";
-import Transaction from "../database/models/Transaction.js";
+import Transaction from "../database/models/transactionModel.js";
 import { ethers } from "ethers";
 import { decrypt } from "../utils/encryption.js";
 import { EmbedBuilder } from "discord.js";

@@ -1,5 +1,5 @@
 import { SlashCommandBuilder } from "discord.js";
-import Transaction from "../database/models/transactionModel.js";
+import Transaction from "../database/models/transactionModelModel.js";
 import Wallet from "../database/models/wallet.js";
 
 export default {
