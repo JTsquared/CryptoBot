@@ -29,47 +29,40 @@
 
 
 
-// encryption.js
-import crypto from "crypto";
 import { SecretManagerServiceClient } from "@google-cloud/secret-manager";
+import crypto from "crypto";
 
-const SECRET_NAME = "projects/YOUR_PROJECT_ID/secrets/encryption-key/versions/latest";
+const client = new SecretManagerServiceClient();
 
-let encryptionKeyBuffer = null;
-
-// Load encryption key from GCP Secret Manager
-export async function loadEncryptionKey() {
-  if (encryptionKeyBuffer) return encryptionKeyBuffer; // already loaded
-
-  const client = new SecretManagerServiceClient();
-  const [version] = await client.accessSecretVersion({ name: SECRET_NAME });
-  const key = version.payload.data.toString();
-
-  encryptionKeyBuffer = Buffer.from(key, "base64");
-  if (encryptionKeyBuffer.length !== 32) {
-    throw new Error("Encryption key must be 32 bytes for AES-256-GCM.");
-  }
-
-  return encryptionKeyBuffer;
+async function getSecret(secretName) {
+  const [version] = await client.accessSecretVersion({
+    name: `projects/bubbledegen/secrets/${secretName}/versions/latest`,
+  });
+  return version.payload.data.toString();
 }
 
 export async function encrypt(text) {
-  const key = await loadEncryptionKey();
-  const iv = crypto.randomBytes(12); // GCM recommended IV size
+  const key = Buffer.from(await getSecret("ENCRYPTION_KEY"), "base64");
+  const iv = crypto.randomBytes(16);
+
   const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
   const encrypted = Buffer.concat([cipher.update(text, "utf8"), cipher.final()]);
-  const authTag = cipher.getAuthTag();
-  return Buffer.concat([iv, authTag, encrypted]).toString("base64");
+  const tag = cipher.getAuthTag();
+
+  return Buffer.concat([iv, tag, encrypted]).toString("base64");
 }
 
-export async function decrypt(encryptedText) {
-  const key = await loadEncryptionKey();
-  const data = Buffer.from(encryptedText, "base64");
-  const iv = data.slice(0, 12);
-  const authTag = data.slice(12, 28);
-  const encrypted = data.slice(28);
+export async function decrypt(text) {
+  const key = Buffer.from(await getSecret("ENCRYPTION_KEY"), "base64");
+  const data = Buffer.from(text, "base64");
+
+  const iv = data.slice(0, 16);
+  const tag = data.slice(16, 32);
+  const encrypted = data.slice(32);
+
   const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
-  decipher.setAuthTag(authTag);
-  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-  return decrypted.toString("utf8");
+  decipher.setAuthTag(tag);
+
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
+
