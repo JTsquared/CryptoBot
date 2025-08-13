@@ -1,9 +1,9 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import Wallet from "../database/models/wallet.js";
 
-module.exports = {
+export default {
   data: new SlashCommandBuilder()
-    .setName('removeWallet')
+    .setName('removewallet')
     .setDescription('Removes your wallet from the bot (cannot be undone).'),
   async execute(interaction) {
     await interaction.deferReply({ ephemeral: true });
