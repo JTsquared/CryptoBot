@@ -1,6 +1,5 @@
-// removeWallet.js
-const { SlashCommandBuilder } = require('discord.js');
-const Wallet = require('../models/Wallet'); // Your Mongoose model
+import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
+import Wallet from "../database/models/wallet.js";
 
 module.exports = {
   data: new SlashCommandBuilder()
