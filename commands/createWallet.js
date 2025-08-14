@@ -21,7 +21,7 @@ export default {
     const newWallet = new Wallet({
       discordId: interaction.user.id,
       address: wallet.address,
-      privateKey: encrypt(wallet.privateKey)
+      privateKey: await encrypt(wallet.privateKey)
     });
 
     await newWallet.save();

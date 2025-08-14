@@ -105,7 +105,7 @@ export default {
 
     try {
       const provider = new ethers.JsonRpcProvider(process.env.AVALANCHE_RPC);
-      const decryptedKey = decrypt(senderWalletDoc.privateKey);
+      const decryptedKey = await decrypt(senderWalletDoc.privateKey);
       const signer = new ethers.Wallet(decryptedKey, provider);
 
       const contractAddress = getTokenAddress(tokenTicker);

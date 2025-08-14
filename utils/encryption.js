@@ -1,34 +1,3 @@
-// import crypto from "crypto";
-
-// export function encrypt(text) {
-//   if (!process.env.ENCRYPTION_KEY || !process.env.ENCRYPTION_IV) {
-//     throw new Error("Missing ENCRYPTION_KEY or ENCRYPTION_IV in .env");
-//   }
-//   const cipher = crypto.createCipheriv(
-//     "aes-256-ctr",
-//     Buffer.from(process.env.ENCRYPTION_KEY, "hex"),
-//     Buffer.from(process.env.ENCRYPTION_IV, "hex")
-//   );
-//   return Buffer.concat([cipher.update(text), cipher.final()]).toString("hex");
-// }
-
-// export function decrypt(text) {
-//   if (!process.env.ENCRYPTION_KEY || !process.env.ENCRYPTION_IV) {
-//     throw new Error("Missing ENCRYPTION_KEY or ENCRYPTION_IV in .env");
-//   }
-//   const decipher = crypto.createDecipheriv(
-//     "aes-256-ctr",
-//     Buffer.from(process.env.ENCRYPTION_KEY, "hex"),
-//     Buffer.from(process.env.ENCRYPTION_IV, "hex")
-//   );
-//   return Buffer.concat([
-//     decipher.update(Buffer.from(text, "hex")),
-//     decipher.final()
-//   ]).toString();
-// }
-
-
-
 import crypto from "crypto";
 import { SecretManagerServiceClient } from "@google-cloud/secret-manager";
 
