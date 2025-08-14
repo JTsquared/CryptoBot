@@ -20,7 +20,7 @@ export default {
     ),
   async execute(interaction) {
     // Start with ephemeral reply for error handling
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 }); // 64 = EPHEMERAL flag
 
     const senderDiscordId = interaction.user.id;
     const recipientUser = interaction.options.getUser("recipient");
