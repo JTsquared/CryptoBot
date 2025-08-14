@@ -268,9 +268,10 @@ export default {
           .setColor(0xff6666);
       }
 
-      // Send successful rain as a new public message, then delete the ephemeral one
+      // Send successful rain as a public message to channel (independent of the interaction)
+      await interaction.channel.send({ embeds: [embed] });
+      // Delete the ephemeral reply
       await interaction.deleteReply();
-      await interaction.followUp({ embeds: [embed] });
 
     } catch (err) {
       console.error("Rain failed:", err);

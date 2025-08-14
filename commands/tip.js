@@ -142,9 +142,10 @@ export default {
         .setDescription(`**${interaction.user.username}** tipped **${recipientUser.username}** ${amount} ${tokenTicker}!`)
         .setTimestamp();
 
-      // Delete the ephemeral reply first, then send public message
+      // Send public message to channel (independent of the interaction)
+      await interaction.channel.send({ embeds: [embed] });
+      // Delete the ephemeral reply
       await interaction.deleteReply();
-      await interaction.followUp({ embeds: [embed] });
 
       // Log transaction in DB
       await Transaction.create({
