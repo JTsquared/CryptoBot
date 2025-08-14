@@ -19,7 +19,8 @@ export default {
         .addChoices(...TOKEN_CHOICES)
     ),
   async execute(interaction) {
-    await interaction.deferReply({ flags: 0 }); // Not ephemeral
+    // Start with ephemeral reply for error handling
+    await interaction.deferReply({ ephemeral: true });
 
     const senderDiscordId = interaction.user.id;
     const recipientUser = interaction.options.getUser("recipient");
@@ -141,7 +142,9 @@ export default {
         .setDescription(`**${interaction.user.username}** tipped **${recipientUser.username}** ${amount} ${tokenTicker}!`)
         .setTimestamp();
 
-      await interaction.editReply({ embeds: [embed] });
+      // Send successful tip as a new public message, then delete the ephemeral one
+      await interaction.followUp({ embeds: [embed] });
+      await interaction.deleteReply();
 
       // Log transaction in DB
       await Transaction.create({

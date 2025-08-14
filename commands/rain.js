@@ -29,7 +29,8 @@ export default {
     ),
 
   async execute(interaction) {
-    await interaction.deferReply();
+    // Start with ephemeral reply for error handling
+    await interaction.deferReply({ ephemeral: true });
 
     const senderDiscordId = interaction.user.id;
     const target = interaction.options.getString("target");
@@ -267,7 +268,9 @@ export default {
           .setColor(0xff6666);
       }
 
-      await interaction.editReply({ embeds: [embed] });
+      // Send successful rain as a new public message, then delete the ephemeral one
+      await interaction.followUp({ embeds: [embed] });
+      await interaction.deleteReply();
 
     } catch (err) {
       console.error("Rain failed:", err);
