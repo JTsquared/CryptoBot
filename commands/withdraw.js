@@ -58,7 +58,7 @@ export default {
         return interaction.editReply("❌ Network connection failed. Please try again later.");
       }
 
-      const privateKey = decrypt(existingWallet.privateKey);
+      const privateKey = await decrypt(existingWallet.privateKey);
       const signer = new ethers.Wallet(privateKey, provider);
 
       const contractAddress = getTokenAddress(tokenTicker);
