@@ -142,9 +142,9 @@ export default {
         .setDescription(`**${interaction.user.username}** tipped **${recipientUser.username}** ${amount} ${tokenTicker}!`)
         .setTimestamp();
 
-      // Send successful tip as a new public message, then delete the ephemeral one
-      await interaction.followUp({ embeds: [embed] });
+      // Delete the ephemeral reply first, then send public message
       await interaction.deleteReply();
+      await interaction.followUp({ embeds: [embed] });
 
       // Log transaction in DB
       await Transaction.create({

@@ -269,8 +269,8 @@ export default {
       }
 
       // Send successful rain as a new public message, then delete the ephemeral one
-      await interaction.followUp({ embeds: [embed] });
       await interaction.deleteReply();
+      await interaction.followUp({ embeds: [embed] });
 
     } catch (err) {
       console.error("Rain failed:", err);
