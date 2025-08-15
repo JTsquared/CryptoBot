@@ -20,6 +20,13 @@ const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith("
 const commands = [];
 for (const file of commandFiles) {
   const command = (await import(`./commands/${file}`)).default;
+
+  // Skip registration if marked as hidden
+  if (command.hidden) {
+    console.log(`Skipping hidden command: ${command.data.name}`);
+    continue;
+  }
+
   client.commands.set(command.data.name, command);
   commands.push(command.data.toJSON());
 }
@@ -32,6 +39,30 @@ client.once("ready", async () => {
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
   await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
   console.log("Slash commands registered.");
+
+  const hiddenCommands = [];
+  for (const file of commandFiles) {
+    const mod = await import(`./commands/${file}`);
+    if (mod.default?.hidden) {
+      hiddenCommands.push(mod.default);
+    }
+  }
+
+  for (const cmd of hiddenCommands) {
+    // Only register in guilds that also have Rumble Bot
+    client.guilds.cache.forEach(async guild => {
+      const rumbleBot = guild.members.cache.find(
+        member => member.user.username === 'Rumble Bot' // or use its ID if you know it
+      );
+      if (rumbleBot) {
+        await rest.put(
+          Routes.applicationGuildCommands(client.user.id, guild.id),
+          { body: [cmd.data.toJSON()] }
+        );
+        console.log(`Registered hidden command ${cmd.data.name} in guild ${guild.name}`);
+      }
+    });
+  }
 });
 
 client.on("interactionCreate", async interaction => {
