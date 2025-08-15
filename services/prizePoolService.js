@@ -1,6 +1,6 @@
 // services/prizePoolService.js
-import PrizePoolWallet from "../models/PrizePoolWallet.js";
-import { generateWallet } from "../models/Wallet.js"; 
+import PrizePoolWallet from "../database/models/prizePoolWallet.js";
+import { generateWallet } from "../utils/wallet.js"; 
 import { getTokenAddress, isNativeToken, ERC20_ABI } from "../utils/tokenConfig.js";
 import { ethers } from "ethers";
 
