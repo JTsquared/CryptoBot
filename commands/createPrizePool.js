@@ -1,13 +1,21 @@
 // commands/createprizepool.js
 import { SlashCommandBuilder } from 'discord.js';
-import prizePoolService from '../services/prizePoolService.js';
-import PrizePoolWallet from '../models/PrizePoolWallet.js';
+import { PrizePoolService } from '../services/prizePoolService.js';
+import PrizePoolWallet from '../database/models/prizePoolWallet.js';
+import { ethers } from 'ethers';
+
+// Create an ethers provider (replace RPC_URL with your network URL)
+const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
+
+// Instantiate the PrizePoolService
+const prizePoolService = new PrizePoolService(provider);
 
 export default {
   hidden: true,
   data: new SlashCommandBuilder()
     .setName('createprizepool')
     .setDescription('Create a prize pool wallet for this server (admin only)'),
+  
   async execute(interaction) {
     if (!interaction.member.permissions.has('ManageGuild')) {
       return interaction.reply({ content: '❌ You do not have permission to use this command.', ephemeral: true });
@@ -23,7 +31,7 @@ export default {
       });
     }
 
-    const newWallet = await prizePoolService.createWallet(guildId);
+    const newWallet = await prizePoolService.getOrCreateWallet(guildId);
     await interaction.reply({
       content: `✅ Prize pool wallet created: \`${newWallet.address}\`\nSend donations here to fund Crypto Rumbles.`,
       ephemeral: false

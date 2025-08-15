@@ -1,4 +1,4 @@
-// models/PrizePoolWallet.js
+
 import mongoose from "mongoose";
 
 const prizePoolWalletSchema = new mongoose.Schema({
