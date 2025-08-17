@@ -7,4 +7,5 @@ const prizePoolWalletSchema = new mongoose.Schema({
   privateKey: { type: String, required: true },
 }, { timestamps: true });
 
-export default mongoose.model("PrizePoolWallet", prizePoolWalletSchema);
+//export default mongoose.model("PrizePoolWallet", prizePoolWalletSchema);
+export default prizePoolWalletSchema;
