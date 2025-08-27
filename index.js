@@ -3,6 +3,8 @@ import fs from "fs";
 import path from "path";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
+import prizePoolRoutes from "./api/prizePoolRoutes.js";
+import express from "express";
 
 dotenv.config();
 
@@ -78,3 +80,15 @@ client.on("interactionCreate", async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
+// ----------------- EXPRESS SERVER SETUP -----------------
+const app = express();
+app.use(express.json());
+
+// Mount your API routes
+app.use("/api/prizepool", prizePoolRoutes);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`API server running on http://localhost:${PORT}`);
+});

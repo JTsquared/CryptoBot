@@ -47,7 +47,6 @@ export default {
     }
 
     await interaction.guild.members.fetch();
-    console.log("Members fetched:", interaction.guild.members.cache.size);
 
     let members;
     let targetName; // Store the target name for display
@@ -77,7 +76,6 @@ export default {
     }
 
     if (members.size === 0) {
-      console.log("No eligible members found for raining.");
       return interaction.editReply("No eligible members found to rain on.");
     }
 
@@ -94,15 +92,9 @@ export default {
       return interaction.editReply("No eligible members with wallets found to rain on.");
     }
 
-    // Log eligible members for debugging
-    console.log(`Found ${eligibleMembers.length} eligible members with wallets`);
-    console.log(`Total amount to distribute: ${totalAmount} ${tokenTicker}`);
-
     // Divide only among eligible members
     const perUserAmount = totalAmount / eligibleMembers.length;
     const perUserRounded = parseFloat(perUserAmount.toFixed(18));
-
-    console.log(`Amount per user: ${perUserRounded} ${tokenTicker}`);
 
     try {
       const provider = new ethers.JsonRpcProvider(process.env.AVALANCHE_RPC);
@@ -116,7 +108,6 @@ export default {
 
       // Get gas price
       const feeData = await provider.getFeeData();
-      console.log("Fee data:", feeData);
       if (!feeData.gasPrice) {
         return interaction.editReply("Could not fetch gas price from provider.");
       }
@@ -173,13 +164,11 @@ export default {
         }
       }
 
-      console.log(`Raining ${perUserRounded} ${tokenTicker} to ${eligibleMembers.length} members.`);
       let successfulTransactions = [];
       let failedTransactions = [];
 
       // Get starting nonce to avoid conflicts
       let currentNonce = await provider.getTransactionCount(senderWalletDoc.address, "pending");
-      console.log(`Starting nonce: ${currentNonce}`);
 
       for (let i = 0; i < eligibleMembers.length; i++) {
         const { id, member, walletDoc } = eligibleMembers[i];
@@ -224,8 +213,6 @@ export default {
             token: tokenTicker,
             txHash: tx.hash,
           });
-
-          console.log(`✅ Sent ${perUserRounded} ${tokenTicker} to ${member.user.username} (nonce: ${currentNonce + i})`);
           
           // Small delay between transactions to avoid network issues
           if (i < eligibleMembers.length - 1) {

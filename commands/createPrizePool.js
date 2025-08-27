@@ -1,7 +1,8 @@
 // commands/createprizepool.js
 import { SlashCommandBuilder } from 'discord.js';
 import { PrizePoolService } from '../services/prizePoolService.js';
-import { PrizePoolWallet } from '../database/models/prizePoolWallet.js';
+import PrizePoolWallet from '../database/models/prizePoolWallet.js';
+// import prizePoolWalletSchema from '../database/models/prizePoolWallet.js';
 import { ethers } from 'ethers';
 
 // Create an ethers provider (replace RPC_URL with your network URL)
@@ -22,6 +23,8 @@ export default {
     }
 
     const guildId = interaction.guild.id;
+    const PrizePoolWallet = mongoose.model("PrizePoolWallet", prizePoolWalletSchema);
+    
     const existingWallet = await PrizePoolWallet.findOne({ guildId });
 
     if (existingWallet) {

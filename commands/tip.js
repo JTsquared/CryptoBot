@@ -156,8 +156,6 @@ export default {
         txHash: tx.hash
       });
 
-      console.log(`✅ ${interaction.user.username} tipped ${recipientUser.username} ${amount} ${tokenTicker} - TX: ${tx.hash}`);
-
     } catch (err) {
       console.error("Tip failed:", err);
       return interaction.editReply(

@@ -145,8 +145,6 @@ export default {
         `✅ Withdraw sent!\n**Amount:** ${amount} ${tokenTicker}\n**To:** \`${address}\`\n**TX:** https://testnet.snowtrace.io/tx/${tx.hash}`
       );
 
-      console.log(`✅ withdraw successful: ${interaction.user.username} withdrew ${amount} ${tokenTicker} - TX: ${tx.hash}`);
-
     } catch (error) {
       console.error("withdraw error:", error);
       await interaction.editReply(
