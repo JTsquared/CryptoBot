@@ -643,8 +643,8 @@ export class PrizePoolService {
     return await PrizePoolWallet.findOne({ guildId });
   }
 
-  async getPendingClaims(guildId, userId) {
-    return await PrizeEscrow.find({ guildId, userId, claimed: false });
+  async getPendingClaims(guildId, discordId) {
+    return await PrizeEscrow.find({ guildId, discordId, claimed: false });
   }
 
   async getEscrowedAmountForToken(guildId, token) {
@@ -674,12 +674,17 @@ export class PrizePoolService {
       const successMsgs = [];
       const failMsgs = [];
 
+      //const out = await prizePoolService.payout(
+      // guildId, recipientDiscordId, toAddress, ticker, amount);
+
       for (const entry of pendingClaims) {
         try {
           const payoutResult = await this.payout(
             entry.guildId,
+            entry.discordId,
             entry.toAddress,
-            entry.token
+            entry.token,
+            entry.amount
           );
 
           if (payoutResult.success) {
