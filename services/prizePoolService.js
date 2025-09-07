@@ -244,172 +244,184 @@ export class PrizePoolService {
     }
   }
 
-  async payout(guildId, recipientDiscordId, toAddress, ticker, amount = "all") {
-    const poolWallet = await this.getPrizePoolWallet(guildId);
-    if (!poolWallet) {
-      return { success: false, error: "NO_WALLET" };
+// Fixed payout method with escrow claim support
+async payout(guildId, recipientDiscordId, toAddress, ticker, amount = "all", isEscrowClaim = false) {
+  const poolWallet = await this.getPrizePoolWallet(guildId);
+  if (!poolWallet) {
+    return { success: false, error: "NO_WALLET" };
+  }
+
+  try {
+    const provider = this.provider;
+    const decryptedKey = await decrypt(poolWallet.privateKey);
+    const signer = new ethers.Wallet(decryptedKey, provider);
+
+    // Get gas price once
+    const feeData = await provider.getFeeData();
+    if (!feeData || !feeData.gasPrice) {
+      return { success: false, error: "NETWORK_ERROR" };
     }
-  
-    try {
-      const provider = this.provider;
-      const decryptedKey = await decrypt(poolWallet.privateKey);
-      const signer = new ethers.Wallet(decryptedKey, provider);
-  
-      // Get gas price once
-      const feeData = await provider.getFeeData();
-      if (!feeData || !feeData.gasPrice) {
-        return { success: false, error: "NETWORK_ERROR" };
+    const gasPrice = feeData.gasPrice;
+
+    console.log(`Payout requested: ${amount} ${ticker} to ${toAddress} from guild ${guildId} (escrowClaim: ${isEscrowClaim})`);
+    
+    // Helper function to create escrow entry with error handling
+    const createEscrowEntry = async (token, amountFormatted, errorMessage) => {
+      try {
+        const escrowEntry = await PrizeEscrow.create({
+          guildId,
+          discordId: recipientDiscordId,
+          token: token,
+          amount: amountFormatted,
+          claimed: false,
+          createdAt: new Date()
+        });
+        
+        console.log(`📦 Created escrow entry for failed ${token} transfer: ${amountFormatted}`);
+        return escrowEntry;
+      } catch (escrowError) {
+        console.error(`Failed to create escrow entry for ${token}:`, escrowError);
+        return null;
       }
-      const gasPrice = feeData.gasPrice;
-  
-      console.log(`Payout requested: ${amount} ${ticker} to ${toAddress} from guild ${guildId}`);
+    };
+
+    // Helper: get reserved escrow in token units (as BigInt wei/units)
+    const getReservedWei = async (tk, decimals) => {
+      // Skip reserved calculation for escrow claims
+      if (isEscrowClaim) {
+        console.log(`Skipping reserved calculation for escrow claim of ${tk}`);
+        return 0n;
+      }
       
-      // Helper function to create escrow entry with error handling
-      const createEscrowEntry = async (token, amountFormatted, errorMessage) => {
+      const entries = await PrizeEscrow.find({ guildId, token: tk, claimed: false });
+      let reserved = 0n;
+      for (const e of entries) {
         try {
-          const escrowEntry = await PrizeEscrow.create({
-            guildId,
-            discordId: recipientDiscordId,
-            token: token,
-            amount: amountFormatted,
-            claimed: false,
-            createdAt: new Date()
+          reserved += ethers.parseUnits(String(e.amount), decimals);
+        } catch (err) {
+          console.warn(`Failed to parse escrow amount "${e.amount}" for ${tk}:`, err);
+        }
+      }
+      return reserved;
+    };
+
+    // Helper: pool AVAX balance (used to pay gas for ERC-20 transfers)
+    let poolAvaxBalance = await provider.getBalance(poolWallet.address);
+    console.log(`Pool AVAX balance: ${ethers.formatEther(poolAvaxBalance)} AVAX`);
+    
+    // Case A: ticker === "all" -> iterate all *non-native* tokens
+    if (ticker.toUpperCase() === "ALL") {
+      const txs = [];
+      const ops = [];
+
+      console.log("Processing payout for all tokens except native AVAX");
+      for (const t of Object.keys(TOKEN_MAP)) {
+        console.log(`Checking token: ${t}`);
+        if (isNativeToken(t)) continue;
+
+        const contractAddr = TOKEN_MAP[t];
+        console.log(`Token address: ${contractAddr}`);
+        if (!contractAddr) continue;
+
+        const contract = new ethers.Contract(contractAddr, ERC20_ABI, signer);
+        const balance = await contract.balanceOf(poolWallet.address);
+        console.log(`Balance of ${t}: ${ethers.formatUnits(balance, await contract.decimals())} (${balance} in raw units)`);
+        if (!balance || balance === 0n) continue;
+
+        const decimals = Number(await contract.decimals());
+        const reserved = await getReservedWei(t, decimals);
+        const available = balance - reserved;
+        console.log(`Reserved in escrow: ${ethers.formatUnits(reserved, decimals)} (${reserved} in raw units)`);
+        console.log(`Available for payout: ${ethers.formatUnits(available, decimals)}`);
+        
+        // For escrow claims, use total balance; for regular payouts, use available balance
+        const usableBalance = isEscrowClaim ? balance : available;
+        if (usableBalance <= 0n) continue;
+
+        // Compute desired send amount for this token
+        let amountToSend;
+        if (amount === "all") {
+          console.log(`Using ${isEscrowClaim ? 'total' : 'available'} amount for ${t}: ${ethers.formatUnits(usableBalance, decimals)}`);
+          amountToSend = usableBalance;
+        } else {
+          console.log(`Parsing fixed amount: ${amount} with decimals: ${decimals}`);
+          amountToSend = ethers.parseUnits(String(amount), decimals);
+          if (amountToSend > usableBalance) {
+            return { success: false, error: "NO_FUNDS" };
+          }
+        }
+
+        // Estimate gas for this ERC20 transfer
+        const gasEstimate = await contract.transfer.estimateGas(toAddress, amountToSend);
+        const gasCost = gasEstimate * gasPrice;
+
+        console.log(`Estimated gas for ${t} transfer: ${gasEstimate} at ${ethers.formatUnits(gasPrice, "gwei")} gwei = ${ethers.formatEther(gasCost)} AVAX`);
+        ops.push({ token: t, contract, amountToSend, gasEstimate, gasCost, decimals });
+      }
+
+      console.log(`Prepared ${ops.length} token transfer operations.`);
+      // Check total gas cost vs pool AVAX
+      const totalGasCost = ops.reduce((acc, o) => acc + o.gasCost, 0n);
+      if (poolAvaxBalance < totalGasCost) {
+        return { success: false, error: "INSUFFICIENT_GAS" };
+      }
+      
+      console.log(`Total estimated gas cost for all transfers: ${ethers.formatEther(totalGasCost)} AVAX`);
+
+      // Execute ops sequentially with escrow fallback for failures
+      const successfulTxs = [];
+      const failedOps = [];
+
+      for (const op of ops) {
+        try {
+          console.log(`Attempting to transfer ${ethers.formatUnits(op.amountToSend, op.decimals)} ${op.token} to ${toAddress}`);
+          
+          const tx = await op.contract.transfer(toAddress, op.amountToSend, {
+            gasLimit: op.gasEstimate,
+            gasPrice
           });
           
-          console.log(`📦 Created escrow entry for failed ${token} transfer: ${amountFormatted}`);
-          return escrowEntry;
-        } catch (escrowError) {
-          console.error(`Failed to create escrow entry for ${token}:`, escrowError);
-          return null;
-        }
-      };
-
-      // Helper: get reserved escrow in token units (as BigInt wei/units)
-      const getReservedWei = async (tk, decimals) => {
-        const entries = await PrizeEscrow.find({ guildId, token: tk, claimed: false });
-        let reserved = 0n;
-        for (const e of entries) {
+          await tx.wait();
+          console.log(`✅ Successfully transferred ${op.token} - TX: ${tx.hash}`);
+          
+          const amountFormatted = ethers.formatUnits(op.amountToSend, op.decimals);
+          
+          // Log successful transaction to database
           try {
-            reserved += ethers.parseUnits(String(e.amount), decimals);
-          } catch (err) {
-            console.warn(`Failed to parse escrow amount "${e.amount}" for ${tk}:`, err);
-          }
-        }
-        return reserved;
-      };
-  
-      // Helper: pool AVAX balance (used to pay gas for ERC-20 transfers)
-      let poolAvaxBalance = await provider.getBalance(poolWallet.address);
-      console.log(`Pool AVAX balance: ${ethers.formatEther(poolAvaxBalance)} AVAX`);
-      
-      // Case A: ticker === "all" -> iterate all *non-native* tokens
-      if (ticker.toUpperCase() === "ALL") {
-        const txs = [];
-        const ops = [];
-  
-        console.log("Processing payout for all tokens except native AVAX");
-        for (const t of Object.keys(TOKEN_MAP)) {
-          console.log(`Checking token: ${t}`);
-          if (isNativeToken(t)) continue;
-  
-          const contractAddr = TOKEN_MAP[t];
-          console.log(`Token address: ${contractAddr}`);
-          if (!contractAddr) continue;
-  
-          const contract = new ethers.Contract(contractAddr, ERC20_ABI, signer);
-          const balance = await contract.balanceOf(poolWallet.address);
-          console.log(`Balance of ${t}: ${ethers.formatUnits(balance, await contract.decimals())} (${balance} in raw units)`);
-          if (!balance || balance === 0n) continue;
-  
-          const decimals = Number(await contract.decimals());
-          const reserved = await getReservedWei(t, decimals);
-          const available = balance - reserved;
-          console.log(`Reserved in escrow: ${ethers.formatUnits(reserved, decimals)} (${reserved} in raw units)`);
-          if (available <= 0n) continue;
-  
-          // Compute desired send amount for this token
-          let amountToSend;
-          if (amount === "all") {
-            console.log(`Using all available amount for ${t}: ${ethers.formatUnits(available, decimals)}`);
-            amountToSend = available;
-          } else {
-            console.log(`Parsing fixed amount: ${amount} with decimals: ${decimals}`);
-            amountToSend = ethers.parseUnits(String(amount), decimals);
-            if (amountToSend > available) {
-              return { success: false, error: "NO_FUNDS" };
-            }
-          }
-  
-          // Estimate gas for this ERC20 transfer
-          const gasEstimate = await contract.transfer.estimateGas(toAddress, amountToSend);
-          const gasCost = gasEstimate * gasPrice;
-  
-          console.log(`Estimated gas for ${t} transfer: ${gasEstimate} at ${ethers.formatUnits(gasPrice, "gwei")} gwei = ${ethers.formatEther(gasCost)} AVAX`);
-          ops.push({ token: t, contract, amountToSend, gasEstimate, gasCost, decimals });
-        }
-  
-        console.log(`Prepared ${ops.length} token transfer operations.`);
-        // Check total gas cost vs pool AVAX
-        const totalGasCost = ops.reduce((acc, o) => acc + o.gasCost, 0n);
-        if (poolAvaxBalance < totalGasCost) {
-          return { success: false, error: "INSUFFICIENT_GAS" };
-        }
-        
-        console.log(`Total estimated gas cost for all transfers: ${ethers.formatEther(totalGasCost)} AVAX`);
-
-        // Execute ops sequentially with escrow fallback for failures
-        const successfulTxs = [];
-        const failedOps = [];
-
-        for (const op of ops) {
-          try {
-            console.log(`Attempting to transfer ${ethers.formatUnits(op.amountToSend, op.decimals)} ${op.token} to ${toAddress}`);
-            
-            const tx = await op.contract.transfer(toAddress, op.amountToSend, {
-              gasLimit: op.gasEstimate,
-              gasPrice
-            });
-            
-            await tx.wait();
-            console.log(`✅ Successfully transferred ${op.token} - TX: ${tx.hash}`);
-            
-            const amountFormatted = ethers.formatUnits(op.amountToSend, op.decimals);
-            
-            // Log successful transaction to database
-            try {
-              await Transaction.create({
-                senderId: poolWallet.address, // Could also use a bot ID or system ID
-                recipientId: recipientDiscordId,
-                token: op.token,
-                amount: amountFormatted,
-                txHash: tx.hash
-              });
-              console.log(`📝 Logged ${op.token} transaction to database`);
-            } catch (logError) {
-              console.error(`Failed to log ${op.token} transaction:`, logError);
-            }
-            
-            successfulTxs.push({ 
-              token: op.token, 
-              txHash: tx.hash, 
-              amount: amountFormatted 
-            });
-          } catch (error) {
-            console.error(`❌ Failed to transfer ${op.token}:`, error);
-            
-            // Add failed operation to escrow instead
-            const amountFormatted = ethers.formatUnits(op.amountToSend, op.decimals);
-            
-            failedOps.push({
+            await Transaction.create({
+              senderId: poolWallet.address,
+              recipientId: recipientDiscordId,
               token: op.token,
               amount: amountFormatted,
-              error: error.message
+              txHash: tx.hash
             });
+            console.log(`📝 Logged ${op.token} transaction to database`);
+          } catch (logError) {
+            console.error(`Failed to log ${op.token} transaction:`, logError);
           }
+          
+          successfulTxs.push({ 
+            token: op.token, 
+            txHash: tx.hash, 
+            amount: amountFormatted 
+          });
+        } catch (error) {
+          console.error(`❌ Failed to transfer ${op.token}:`, error);
+          
+          // Add failed operation to escrow instead (only for non-escrow claims)
+          const amountFormatted = ethers.formatUnits(op.amountToSend, op.decimals);
+          
+          failedOps.push({
+            token: op.token,
+            amount: amountFormatted,
+            error: error.message
+          });
         }
+      }
 
-        // Create escrow entries for failed operations
-        const escrowEntries = [];
+      // Create escrow entries for failed operations (skip for escrow claims)
+      const escrowEntries = [];
+      if (!isEscrowClaim) {
         for (const failedOp of failedOps) {
           const escrowEntry = await createEscrowEntry(
             failedOp.token, 
@@ -420,224 +432,248 @@ export class PrizePoolService {
             escrowEntries.push(escrowEntry);
           }
         }
+      }
 
-        // Return comprehensive result - mark as failed if ANY operation failed
-        const hasFailures = failedOps.length > 0;
+      // Return comprehensive result - mark as failed if ANY operation failed
+      const hasFailures = failedOps.length > 0;
+      return { 
+        success: !hasFailures,
+        error: hasFailures ? "PAYOUT_FAILURE" : undefined,
+        txs: successfulTxs,
+        failures: failedOps,
+        escrowEntries: escrowEntries,
+        summary: {
+          successful: successfulTxs.length,
+          failed: failedOps.length,
+          escrowed: escrowEntries.length
+        }
+      };
+    }
+
+    // Case B: specific ticker (native or ERC20)
+    if (isNativeToken(ticker)) {
+      // Native AVAX payout - escrow claims can use full balance
+      const balance = await provider.getBalance(poolWallet.address);
+      console.log(`Native AVAX balance: ${ethers.formatEther(balance)} AVAX`);
+      if (balance === 0n) return { success: false, error: "NO_FUNDS" };
+
+      try {
+        if (amount === "all") {
+          console.log("Payout entire AVAX balance minus gas");
+          const gasEstimate = await provider.estimateGas({
+            to: toAddress,
+            from: poolWallet.address,
+            value: balance
+          });
+          const gasCost = gasEstimate * gasPrice;
+          console.log(`Estimated gas: ${gasEstimate} at ${ethers.formatUnits(gasPrice, "gwei")} gwei = ${ethers.formatEther(gasCost)} AVAX`);
+          if (balance <= gasCost) return { success: false, error: "INSUFFICIENT_GAS" };
+
+          const valueToSend = balance - gasCost;
+          console.log(`Sending value: ${ethers.formatEther(valueToSend)} AVAX to ${toAddress}`);
+          const tx = await signer.sendTransaction({
+            to: toAddress,
+            value: valueToSend,
+            gasPrice,
+            gasLimit: gasEstimate
+          });
+          await tx.wait();
+          
+          // Log successful AVAX transaction
+          const amountFormatted = ethers.formatEther(valueToSend);
+          try {
+            await Transaction.create({
+              senderId: poolWallet.address,
+              recipientId: recipientDiscordId,
+              token: 'AVAX',
+              amount: amountFormatted,
+              txHash: tx.hash
+            });
+            console.log(`📝 Logged AVAX transaction to database`);
+          } catch (logError) {
+            console.error(`Failed to log AVAX transaction:`, logError);
+          }
+          
+          return { 
+            success: true, 
+            txs: [{ token: 'AVAX', txHash: tx.hash, amount: amountFormatted }],
+            failures: [],
+            escrowEntries: [],
+            summary: {
+              successful: 1,
+              failed: 0,
+              escrowed: 0
+            }
+          };
+        } else {
+          console.log(`Payout fixed AVAX amount: ${amount}`);
+          const amountWei = ethers.parseUnits(String(amount), 18);
+          const gasEstimate = await provider.estimateGas({
+            to: toAddress,
+            from: poolWallet.address,
+            value: amountWei
+          });
+          const gasCost = gasEstimate * gasPrice;
+          if (balance < amountWei + gasCost) return { success: false, error: "INSUFFICIENT_FUNDS" };
+
+          console.log(`Estimated gas: ${gasEstimate} at ${ethers.formatUnits(gasPrice, "gwei")} gwei = ${ethers.formatEther(gasCost)} AVAX`);
+          const tx = await signer.sendTransaction({
+            to: toAddress,
+            value: amountWei,
+            gasPrice,
+            gasLimit: gasEstimate
+          });
+          await tx.wait();
+          
+          // Log successful AVAX transaction
+          try {
+            await Transaction.create({
+              senderId: poolWallet.address,
+              recipientId: recipientDiscordId,
+              token: 'AVAX',
+              amount: String(amount),
+              txHash: tx.hash
+            });
+            console.log(`📝 Logged AVAX transaction to database`);
+          } catch (logError) {
+            console.error(`Failed to log AVAX transaction:`, logError);
+          }
+          
+          return { 
+            success: true, 
+            txs: [{ token: 'AVAX', txHash: tx.hash, amount: String(amount) }],
+            failures: [],
+            escrowEntries: [],
+            summary: {
+              successful: 1,
+              failed: 0,
+              escrowed: 0
+            }
+          };
+        }
+      } catch (error) {
+        console.error(`❌ Failed to transfer AVAX:`, error);
+        
+        // Create escrow entry for failed AVAX transfer (skip for escrow claims)
+        const amountFormatted = amount === "all" ? 
+          ethers.formatEther(balance) : 
+          String(amount);
+        
+        const escrowEntry = !isEscrowClaim ? await createEscrowEntry('AVAX', amountFormatted, error.message) : null;
+        
         return { 
-          success: !hasFailures, // Only successful if ALL operations succeeded
-          error: hasFailures ? "PAYOUT_FAILURE" : undefined,
-          txs: successfulTxs,
-          failures: failedOps,
-          escrowEntries: escrowEntries,
+          success: false, 
+          error: "PAYOUT_FAILURE", 
+          txs: [],
+          failures: [{ token: 'AVAX', amount: amountFormatted, error: error.message }],
+          escrowEntries: escrowEntry ? [escrowEntry] : [],
           summary: {
-            successful: successfulTxs.length,
-            failed: failedOps.length,
-            escrowed: escrowEntries.length
+            successful: 0,
+            failed: 1,
+            escrowed: escrowEntry ? 1 : 0
           }
         };
       }
-  
-      // Case B: specific ticker (native or ERC20)
-      if (isNativeToken(ticker)) {
-        // Native AVAX payout
-        const balance = await provider.getBalance(poolWallet.address);
-        console.log(`Native AVAX balance: ${ethers.formatEther(balance)} AVAX`);
-        if (balance === 0n) return { success: false, error: "NO_FUNDS" };
-  
-        try {
-          if (amount === "all") {
-            console.log("Payout entire AVAX balance minus gas");
-            const gasEstimate = await provider.estimateGas({
-              to: toAddress,
-              from: poolWallet.address,
-              value: balance
-            });
-            const gasCost = gasEstimate * gasPrice;
-            console.log(`Estimated gas: ${gasEstimate} at ${ethers.formatUnits(gasPrice, "gwei")} gwei = ${ethers.formatEther(gasCost)} AVAX`);
-            if (balance <= gasCost) return { success: false, error: "INSUFFICIENT_GAS" };
-  
-            const valueToSend = balance - gasCost;
-            console.log(`Sending value: ${ethers.formatEther(valueToSend)} AVAX to ${toAddress}`);
-            const tx = await signer.sendTransaction({
-              to: toAddress,
-              value: valueToSend,
-              gasPrice,
-              gasLimit: gasEstimate
-            });
-            await tx.wait();
-            
-            // Log successful AVAX transaction
-            const amountFormatted = ethers.formatEther(valueToSend);
-            try {
-              await Transaction.create({
-                senderId: poolWallet.address,
-                recipientId: recipientDiscordId,
-                token: 'AVAX',
-                amount: amountFormatted,
-                txHash: tx.hash
-              });
-              console.log(`📝 Logged AVAX transaction to database`);
-            } catch (logError) {
-              console.error(`Failed to log AVAX transaction:`, logError);
-            }
-            
-            return { 
-              success: true, 
-              txs: [{ token: 'AVAX', txHash: tx.hash, amount: amountFormatted }],
-              failures: [],
-              escrowEntries: [],
-              summary: {
-                successful: 1,
-                failed: 0,
-                escrowed: 0
-              }
-            };
-          } else {
-            console.log(`Payout fixed AVAX amount: ${amount}`);
-            const amountWei = ethers.parseUnits(String(amount), 18);
-            const gasEstimate = await provider.estimateGas({
-              to: toAddress,
-              from: poolWallet.address,
-              value: amountWei
-            });
-            const gasCost = gasEstimate * gasPrice;
-            if (balance < amountWei + gasCost) return { success: false, error: "INSUFFICIENT_FUNDS" };
-  
-            console.log(`Estimated gas: ${gasEstimate} at ${ethers.formatUnits(gasPrice, "gwei")} gwei = ${ethers.formatEther(gasCost)} AVAX`);
-            const tx = await signer.sendTransaction({
-              to: toAddress,
-              value: amountWei,
-              gasPrice,
-              gasLimit: gasEstimate
-            });
-            await tx.wait();
-            
-            // Log successful AVAX transaction
-            try {
-              await Transaction.create({
-                senderId: poolWallet.address,
-                recipientId: recipientDiscordId,
-                token: 'AVAX',
-                amount: String(amount),
-                txHash: tx.hash
-              });
-              console.log(`📝 Logged AVAX transaction to database`);
-            } catch (logError) {
-              console.error(`Failed to log AVAX transaction:`, logError);
-            }
-            
-            return { 
-              success: true, 
-              txs: [{ token: 'AVAX', txHash: tx.hash, amount: String(amount) }],
-              failures: [],
-              escrowEntries: [],
-              summary: {
-                successful: 1,
-                failed: 0,
-                escrowed: 0
-              }
-            };
-          }
-        } catch (error) {
-          console.error(`❌ Failed to transfer AVAX:`, error);
-          
-          // Create escrow entry for failed AVAX transfer
-          const amountFormatted = amount === "all" ? 
-            ethers.formatEther(balance) : 
-            String(amount);
-          
-          const escrowEntry = await createEscrowEntry('AVAX', amountFormatted, error.message);
-          
-          return { 
-            success: false, 
-            error: "PAYOUT_FAILURE", 
-            txs: [],
-            failures: [{ token: 'AVAX', amount: amountFormatted, error: error.message }],
-            escrowEntries: escrowEntry ? [escrowEntry] : [],
-            summary: {
-              successful: 0,
-              failed: 1,
-              escrowed: escrowEntry ? 1 : 0
-            }
-          };
-        }
+    } else {
+      // ERC-20 token payout
+      console.log(`Payout ERC-20 token: ${ticker}`);
+      const contractAddress = TOKEN_MAP[ticker];
+      console.log(`Token contract address: ${contractAddress}`);
+      if (!contractAddress) return { success: false, error: "UNKNOWN_TOKEN" };
+
+      const contract = new ethers.Contract(contractAddress, ERC20_ABI, signer);
+      const balance = await contract.balanceOf(poolWallet.address);
+      console.log(`Token balance: ${ethers.formatUnits(balance, await contract.decimals())} (${balance} in raw units)`);
+      if (!balance || balance === 0n) return { success: false, error: "NO_FUNDS" };
+
+      const decimals = Number(await contract.decimals());
+      const reserved = await getReservedWei(ticker, decimals);
+      const available = balance - reserved;
+      console.log(`Reserved in escrow: ${ethers.formatUnits(reserved, decimals)} (${reserved} in raw units)`);
+      console.log(`Available for payout: ${ethers.formatUnits(available, decimals)}`);
+      
+      // For escrow claims, use total balance; for regular payouts, use available balance
+      const usableBalance = isEscrowClaim ? balance : available;
+      if (usableBalance <= 0n) return { success: false, error: "NO_FUNDS" };
+
+      let amountToSend;
+      if (amount === "all") {
+        amountToSend = usableBalance;
+        console.log(`Using ${isEscrowClaim ? 'total' : 'available'} amount: ${ethers.formatUnits(amountToSend, decimals)}`);
       } else {
-        // ERC-20 token payout
-        console.log(`Payout ERC-20 token: ${ticker}`);
-        const contractAddress = TOKEN_MAP[ticker];
-        console.log(`Token contract address: ${contractAddress}`);
-        if (!contractAddress) return { success: false, error: "UNKNOWN_TOKEN" };
-  
-        const contract = new ethers.Contract(contractAddress, ERC20_ABI, signer);
-        const balance = await contract.balanceOf(poolWallet.address);
-        console.log(`Token balance: ${ethers.formatUnits(balance, await contract.decimals())} (${balance} in raw units)`);
-        if (!balance || balance === 0n) return { success: false, error: "NO_FUNDS" };
-  
-        const decimals = Number(await contract.decimals());
-        const reserved = await getReservedWei(ticker, decimals);
-        const available = balance - reserved;
-        console.log(`Reserved in escrow: ${ethers.formatUnits(reserved, decimals)} (${reserved} in raw units)`);
-        if (available <= 0n) return { success: false, error: "NO_FUNDS" };
-  
-        let amountToSend;
-        if (amount === "all") {
-          amountToSend = available;
-          console.log(`Using all available amount: ${ethers.formatUnits(amountToSend, decimals)}`);
-        } else {
-          amountToSend = ethers.parseUnits(String(amount), decimals);
-          console.log(`Parsed fixed amount to send: ${ethers.formatUnits(amountToSend, decimals)}`);
-          if (amountToSend > available) return { success: false, error: "NO_FUNDS" };
-        }
-  
-        // Estimate gas for this ERC20 transfer and make sure pool has AVAX for gas
-        const gasEstimate = await contract.transfer.estimateGas(toAddress, amountToSend);
-        const gasCost = gasEstimate * gasPrice;
-        poolAvaxBalance = await provider.getBalance(poolWallet.address);
-        if (poolAvaxBalance < gasCost) return { success: false, error: "INSUFFICIENT_GAS" };
-  
-        try {
-          console.log(`Estimated gas: ${gasEstimate} at ${ethers.formatUnits(gasPrice, "gwei")} gwei = ${ethers.formatEther(gasCost)} AVAX`);
-          const tx = await contract.transfer(toAddress, amountToSend, {
-            gasLimit: gasEstimate,
-            gasPrice
-          });
-          await tx.wait();
-  
-          console.log(`Payout successful: ${ethers.formatUnits(amountToSend, decimals)} ${ticker} sent to ${toAddress} in tx ${tx.hash}`);
-          return {
-            success: true,
-            txHash: tx.hash,
-            to: toAddress,
-            ticker,
-            amount: amountToSend.toString()
-          };
-        } catch (error) {
-          console.error(`❌ Failed to transfer ${ticker}:`, error);
-          
-          // Create escrow entry for failed ERC-20 transfer
-          const amountFormatted = ethers.formatUnits(amountToSend, decimals);
-          const escrowEntry = await createEscrowEntry(ticker, amountFormatted, error.message);
-          
-          return { 
-            success: false, 
-            error: "PAYOUT_FAILURE", 
-            txs: [],
-            failures: [{ token: ticker, amount: amountFormatted, error: error.message }],
-            escrowEntries: escrowEntry ? [escrowEntry] : [],
-            summary: {
-              successful: 0,
-              failed: 1,
-              escrowed: escrowEntry ? 1 : 0
-            }
-          };
-        }
+        amountToSend = ethers.parseUnits(String(amount), decimals);
+        console.log(`Parsed fixed amount to send: ${ethers.formatUnits(amountToSend, decimals)}`);
+        if (amountToSend > usableBalance) return { success: false, error: "NO_FUNDS" };
       }
+
+      // Estimate gas for this ERC20 transfer and make sure pool has AVAX for gas
+      const gasEstimate = await contract.transfer.estimateGas(toAddress, amountToSend);
+      const gasCost = gasEstimate * gasPrice;
+      poolAvaxBalance = await provider.getBalance(poolWallet.address);
+      if (poolAvaxBalance < gasCost) return { success: false, error: "INSUFFICIENT_GAS" };
+
+      try {
+        console.log(`Estimated gas: ${gasEstimate} at ${ethers.formatUnits(gasPrice, "gwei")} gwei = ${ethers.formatEther(gasCost)} AVAX`);
+        const tx = await contract.transfer(toAddress, amountToSend, {
+          gasLimit: gasEstimate,
+          gasPrice
+        });
+        await tx.wait();
+
+        // Log successful ERC-20 transaction
+        const amountFormatted = ethers.formatUnits(amountToSend, decimals);
+        try {
+          await Transaction.create({
+            senderId: poolWallet.address,
+            recipientId: recipientDiscordId,
+            token: ticker,
+            amount: amountFormatted,
+            txHash: tx.hash
+          });
+          console.log(`📝 Logged ${ticker} transaction to database`);
+        } catch (logError) {
+          console.error(`Failed to log ${ticker} transaction:`, logError);
+        }
+
+        console.log(`Payout successful: ${amountFormatted} ${ticker} sent to ${toAddress} in tx ${tx.hash}`);
+        return {
+          success: true,
+          txs: [{ token: ticker, txHash: tx.hash, amount: amountFormatted }],
+          failures: [],
+          escrowEntries: [],
+          summary: {
+            successful: 1,
+            failed: 0,
+            escrowed: 0
+          }
+        };
+      } catch (error) {
+        console.error(`❌ Failed to transfer ${ticker}:`, error);
+        
+        // Create escrow entry for failed ERC-20 transfer (skip for escrow claims)
+        const amountFormatted = ethers.formatUnits(amountToSend, decimals);
+        const escrowEntry = !isEscrowClaim ? await createEscrowEntry(ticker, amountFormatted, error.message) : null;
+        
+        return { 
+          success: false, 
+          error: "PAYOUT_FAILURE", 
+          txs: [],
+          failures: [{ token: ticker, amount: amountFormatted, error: error.message }],
+          escrowEntries: escrowEntry ? [escrowEntry] : [],
+          summary: {
+            successful: 0,
+            failed: 1,
+            escrowed: escrowEntry ? 1 : 0
+          }
+        };
+      }
+    }
     } catch (err) {
       console.error("payout error:", err);
       if (err.code === "NETWORK_ERROR") return { success: false, error: "NETWORK_ERROR" };
       return { success: false, error: "TX_FAILED", detail: err.message || String(err) };
     }
-}
+  }
   
   async getGuildWallet(guildId) {
     return await PrizePoolWallet.findOne({ guildId });
@@ -661,36 +697,43 @@ export class PrizePoolService {
           error: "NO_WALLET",
         };
       }
-
+  
       const pendingClaims = await this.getPendingClaims(guildId, userId);
-
+  
       if (!pendingClaims || pendingClaims.length === 0) {
         return {
           success: false,
           error: "NO_ESCROW",
         };
       }
-
+  
       const successMsgs = [];
       const failMsgs = [];
-
-      //const out = await prizePoolService.payout(
-      // guildId, recipientDiscordId, toAddress, ticker, amount);
-
+  
       for (const entry of pendingClaims) {
         try {
+          // Pass isEscrowClaim = true to skip reserved balance calculations
           const payoutResult = await this.payout(
             entry.guildId,
             entry.discordId,
-            entry.toAddress,
+            wallet.address, // Use wallet.address instead of entry.toAddress
             entry.token,
-            entry.amount
+            entry.amount,
+            true // isEscrowClaim = true
           );
-
+  
           if (payoutResult.success) {
+            // Mark as claimed and save
             entry.claimed = true;
             await entry.save();
-            successMsgs.push(`✅ Claimed ${entry.amount} ${entry.token}`);
+            
+            // Use the transaction info from the new response format
+            if (payoutResult.txs && payoutResult.txs.length > 0) {
+              const tx = payoutResult.txs[0]; // Should only be one for single claims
+              successMsgs.push(`✅ Claimed ${tx.amount} ${tx.token} - TX: ${tx.txHash}`);
+            } else {
+              successMsgs.push(`✅ Claimed ${entry.amount} ${entry.token}`);
+            }
           } else {
             failMsgs.push(
               `⚠️ Failed to claim ${entry.amount} ${entry.token}: ${payoutResult.error}`
@@ -703,15 +746,20 @@ export class PrizePoolService {
           );
         }
       }
-
+  
       return {
         success: failMsgs.length === 0,
         error: failMsgs.length > 0 ? "PARTIAL_FAILURE" : null,
         successMsgs,
         failMsgs,
+        summary: {
+          totalClaims: pendingClaims.length,
+          successful: successMsgs.length,
+          failed: failMsgs.length
+        }
       };
     } catch (err) {
-      console.error("Error in claimPrizeHandler:", err);
+      console.error("Error in claimEscrow:", err);
       return {
         success: false,
         error: "NETWORK_ERROR",
