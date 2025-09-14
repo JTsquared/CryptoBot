@@ -26,6 +26,13 @@ export default {
         .setDescription("Token to send")
         .setRequired(true)
         .addChoices(...TOKEN_CHOICES)
+    )
+    .addIntegerOption(option =>
+      option
+        .setName("user_count")
+        .setDescription("Number of users to randomly select (optional - defaults to all eligible users)")
+        .setRequired(false)
+        .setMinValue(1)
     ),
 
   async execute(interaction) {
@@ -36,6 +43,7 @@ export default {
     const target = interaction.options.getString("target");
     const totalAmount = interaction.options.getNumber("amount");
     const tokenTicker = interaction.options.getString("token");
+    const userCount = interaction.options.getInteger("user_count"); // This will be null if not provided
 
     if (!totalAmount || totalAmount <= 0) {
       return interaction.editReply("Enter a valid amount greater than 0.");
@@ -92,8 +100,22 @@ export default {
       return interaction.editReply("No eligible members with wallets found to rain on.");
     }
 
-    // Divide only among eligible members
-    const perUserAmount = totalAmount / eligibleMembers.length;
+    // 🔹 NEW: Random selection logic
+    let selectedMembers = eligibleMembers;
+    let selectionInfo = "";
+
+    if (userCount && userCount < eligibleMembers.length) {
+      // Randomly select the specified number of users
+      const shuffled = [...eligibleMembers].sort(() => 0.5 - Math.random());
+      selectedMembers = shuffled.slice(0, userCount);
+      selectionInfo = ` (randomly selected ${userCount} out of ${eligibleMembers.length} eligible users)`;
+    } else if (userCount && userCount >= eligibleMembers.length) {
+      // User requested more than available, use all
+      selectionInfo = ` (requested ${userCount} users, but only ${eligibleMembers.length} eligible users available)`;
+    }
+
+    // Divide only among selected members
+    const perUserAmount = totalAmount / selectedMembers.length;
     const perUserRounded = parseFloat(perUserAmount.toFixed(18));
 
     try {
@@ -126,12 +148,12 @@ export default {
           from: senderWalletDoc.address,
         });
 
-        const totalGasCost = gasEstimate * gasPrice * BigInt(eligibleMembers.length);
+        const totalGasCost = gasEstimate * gasPrice * BigInt(selectedMembers.length);
         const totalCost = ethers.parseEther(totalAmount.toString()) + totalGasCost;
 
         if (balance < totalCost) {
           return interaction.editReply(
-            `Insufficient funds. You need ${totalAmount} AVAX + gas for ${eligibleMembers.length} transactions.`
+            `Insufficient funds. You need ${totalAmount} AVAX + gas for ${selectedMembers.length} transactions.`
           );
         }
       } else {
@@ -153,7 +175,7 @@ export default {
 
         // Check AVAX balance for gas fees
         const gasEstimate = await tokenContract.transfer.estimateGas(senderWalletDoc.address, amountInWei);
-        const totalGasCost = gasEstimate * gasPrice * BigInt(eligibleMembers.length);
+        const totalGasCost = gasEstimate * gasPrice * BigInt(selectedMembers.length);
         const avaxBalance = await provider.getBalance(senderWalletDoc.address);
 
         if (avaxBalance < totalGasCost) {
@@ -170,8 +192,8 @@ export default {
       // Get starting nonce to avoid conflicts
       let currentNonce = await provider.getTransactionCount(senderWalletDoc.address, "pending");
 
-      for (let i = 0; i < eligibleMembers.length; i++) {
-        const { id, member, walletDoc } = eligibleMembers[i];
+      for (let i = 0; i < selectedMembers.length; i++) {
+        const { id, member, walletDoc } = selectedMembers[i];
         try {
           // Use incremented nonce and slightly higher gas price for each transaction
           const adjustedGasPrice = gasPrice + BigInt(i);
@@ -215,7 +237,7 @@ export default {
           });
           
           // Small delay between transactions to avoid network issues
-          if (i < eligibleMembers.length - 1) {
+          if (i < selectedMembers.length - 1) {
             await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
           }
         } catch (err) {
@@ -230,11 +252,11 @@ export default {
       // Calculate actual total distributed (only successful transactions)
       const actualTotalDistributed = successfulTransactions.reduce((sum, t) => sum + t.amount, 0);
 
-      // Create embed with one user per line, no TX links, only show successful transactions
+      // Create embed with updated description showing selection info
       const embed = new EmbedBuilder()
         .setColor(0x00ff99)
         .setTitle(`🌧️ ${interaction.user.username} made it rain ${tokenTicker} on ${targetName}!`)
-        .setDescription(`**Total Distributed: ${actualTotalDistributed} ${tokenTicker}**\n**Recipients: ${successfulTransactions.length}**`)
+        .setDescription(`**Total Distributed: ${actualTotalDistributed} ${tokenTicker}**\n**Recipients: ${successfulTransactions.length}**${selectionInfo}`)
         .setFooter({ text: `Rain command executed in ${interaction.guild.name}` })
         .setTimestamp();
 
