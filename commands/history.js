@@ -31,7 +31,8 @@ export default {
 
     const lines = await Promise.all(transactions.map(async (tx) => {
       const otherId = type === "sent" ? tx.recipientId : tx.senderId;
-      return `${type === "sent" ? "➡️" : "⬅️"} ${tx.amount} AVAX with <@${otherId}> - TX: \`${tx.txHash}\``;
+      const tokenTicker = tx.token && tx.token !== "" ? tx.token : "AVAX";
+      return `${type === "sent" ? "➡️" : "⬅️"} ${tx.amount} ${tokenTicker} with <@${otherId}> - TX: \`${tx.txHash}\``;
     }));
 
     return interaction.reply({ content: `**Last ${type} tips:**\n${lines.join("\n")}`, ephemeral: true });
