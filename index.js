@@ -6,7 +6,21 @@ import dotenv from "dotenv";
 import prizePoolRoutes from "./api/prizePoolRoutes.js";
 import express from "express";
 
-dotenv.config();
+// Default env file
+let envFile = ".env";
+
+// Look for --env=xxx in process args
+const envArg = process.argv.find(arg => arg.startsWith("--env="));
+if (envArg) {
+  const file = envArg.split("=")[1];
+  if (file === "test") envFile = ".env.test";
+  else if (file === "prod") envFile = ".env.prod";
+  else envFile = ".env"; // fallback
+}
+
+console.log(`Loading env file: ${envFile}`);
+dotenv.config({ path: envFile });
+
 
 const client = new Client({ intents: [
     GatewayIntentBits.Guilds,
@@ -83,6 +97,7 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
+console.log("discord token: " + process.env.DISCORD_TOKEN);
 client.login(process.env.DISCORD_TOKEN);
 
 // ----------------- EXPRESS SERVER SETUP -----------------

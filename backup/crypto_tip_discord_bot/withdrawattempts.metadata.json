@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"}],"uuid":"5ac8db6892f54e2abe2bd637ebffa3f4","collectionName":"withdrawattempts","type":"collection"}

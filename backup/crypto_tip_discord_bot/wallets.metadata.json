@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"discordId":{"$numberInt":"1"}},"name":"discordId_1","background":true,"unique":true}],"uuid":"cc809fdc59f4428081abe354d9f14b6f","collectionName":"wallets","type":"collection"}
