@@ -363,14 +363,25 @@ async function attemptTokenWithdraw(interaction, withdrawAttemptRecord, address,
       }
 
       const feeData = await provider.getFeeData();
-      const gasEstimate = await tokenContract.transfer.estimateGas(address, withdrawAmount);
+      let gasEstimate;
+      try {
+        gasEstimate = await tokenContract.transfer.estimateGas(address, withdrawAmount);
+      } catch (err) {
+        console.error("Gas estimation failed:", err);
+        await interaction.editReply(
+          "❌ Transaction failed due to gas estimation error. Try with a larger amount."
+        );
+        return; // exit early so it doesn’t try to continue
+      }
 
+      console.log("attempting transfer...");
       withdrawTx = await tokenContract.transfer(address, withdrawAmount, {
         gasPrice: feeData.gasPrice,
         gasLimit: gasEstimate,
       });
     }
 
+    console.log('waiting...');
     await withdrawTx.wait();
     console.log(`withdraw successful: ${withdrawTx.hash}`);
 
