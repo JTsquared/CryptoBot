@@ -4,8 +4,12 @@ import Wallet from "../database/models/wallet.js";
 import WithdrawAttempt from "../database/models/withdrawAttempt.js";
 import { ethers } from "ethers";
 import { decrypt } from "../utils/encryption.js";
-import { TOKEN_MAP, ERC20_ABI, TOKEN_CHOICES, getTokenAddress, isNativeToken, testnetMainnetTokenMap } from "../utils/tokenConfig.js";
+import { ERC20_ABI, getTokenAddress, isNativeToken, testnetMainnetTokenMap } from "../utils/tokenConfig.js";
 import axios from "axios";
+import { getTokenMap, getTokenChoices } from "../utils/tokenConfig.js";
+
+const TOKEN_MAP = getTokenMap();
+const TOKEN_CHOICES = getTokenChoices();
 
 // Price caching utilities
 const priceCache = new Map();

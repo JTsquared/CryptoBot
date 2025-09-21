@@ -5,10 +5,13 @@ import { generateWallet } from "../utils/wallet.js";
 import { getTokenAddress, isNativeToken, ERC20_ABI } from "../utils/tokenConfig.js";
 import { ethers } from "ethers";
 import { encrypt, decrypt } from "../utils/encryption.js";
-import { TOKEN_MAP } from "../utils/tokenConfig.js";
+// import { TOKEN_MAP } from "../utils/tokenConfig.js";
 import Wallet from "../database/models/wallet.js";
 import PrizeEscrow from "../database/models/prizeEscrow.js";
 import Transaction from "../database/models/transactionModel.js";
+import { getTokenMap } from "../utils/tokenConfig.js";
+
+const TOKEN_MAP = getTokenMap();
 
 export class PrizePoolService {
   constructor(provider) {
