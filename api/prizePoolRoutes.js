@@ -6,7 +6,20 @@ import { ethers } from "ethers";
 import dotenv from "dotenv";
 import Wallet from "../database/models/wallet.js";
 
-dotenv.config();
+// Default env file
+let envFile = ".env";
+
+// Look for --env=xxx in process args
+const envArg = process.argv.find(arg => arg.startsWith("--env="));
+if (envArg) {
+  const file = envArg.split("=")[1];
+  if (file === "test") envFile = ".env.test";
+  else if (file === "prod") envFile = ".env.prod";
+  else envFile = ".env"; // fallback
+}
+
+console.log(`Loading env file: ${envFile}`);
+dotenv.config({ path: envFile });
 
 const router = express.Router();
 const provider = new ethers.JsonRpcProvider(process.env.AVALANCHE_RPC);
