@@ -97,7 +97,7 @@ client.on("interactionCreate", async interaction => {
   }
 });
 
-console.log("discord token: " + process.env.DISCORD_TOKEN);
+// console.log("discord token: " + process.env.DISCORD_TOKEN);
 client.login(process.env.DISCORD_TOKEN);
 
 // ----------------- EXPRESS SERVER SETUP -----------------
