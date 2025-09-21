@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"guildId":{"$numberInt":"1"}},"name":"guildId_1","background":true,"unique":true}],"uuid":"501b07d859b847c78d39f8c2a1d292da","collectionName":"prizepoolwallets","type":"collection"}
