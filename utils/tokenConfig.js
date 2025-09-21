@@ -1,7 +1,5 @@
 // utils/tokenConfig.js
-
-// Token mapping - contract addresses to tickers
-export const TOKEN_MAP = {
+  export const TESTNET_TOKEN_MAP = {
     "AVAX": "native", // Special case for native AVAX
     "DISH": "0xc18A73e3a4Ad464A6e95D842689D3FBaa896a908",
     "SOCK": "0xe3315f7EE916eD355Fd69B7fB61C54313A8309a7",
@@ -9,7 +7,18 @@ export const TOKEN_MAP = {
     "DEGEN": "0xA0f1De56d6a4384fb47c68565b6312A9dEA77eA5",
     "VAPE": "0xB68Ea2Ea0AEcb7Fc5f0EDF19546F5E272B9349b8",
     "SQRD": "0xc281684d4cdc182304a95537655e94330dbf500e",
-  };
+  }
+
+  export const MAINNET_TOKEN_MAP = {
+    "AVAX": "native", // Special case for native AVAX
+    "DISH": "0x40146e96ee5297187022d1ca62a3169b5e45b0a4",
+    "SOCK": "0xbed8e312bcb5c5a283e0030449c254f4c59c092e",
+    "FLD": "0x88f89be3e9b1dc1c5f208696fb9cabfcc684bd5f",
+    "DEGEN": "0x95430905f4b0da123d41ba96600427d2c92b188a",
+    "VAPE": "0x7bddaf6dbab30224aa2116c4291521c7a60d5f55",
+    "BTC.b": "0x152b9d0fdc40c096757f570a51e494bd4b943e50",
+    "ART": "0xF99516BC189AF00FF8EfFD5A1f2295B67d70a90e"
+  }
 
   export const testnetMainnetTokenMap = {
     // Fuji => Mainnet
@@ -35,17 +44,28 @@ export const TOKEN_MAP = {
   ];
   
   // Get all token choices for slash commands
-  export const TOKEN_CHOICES = Object.keys(TOKEN_MAP).map(token => ({
+// ✅ Token choices, evaluated at runtime
+export function getTokenChoices() {
+  const map = getTokenMap();
+  return Object.keys(map).map(token => ({
     name: token,
-    value: token
+    value: token,
   }));
-  
-  // Helper function to get contract address
-  export const getTokenAddress = (ticker) => {
-    return TOKEN_MAP[ticker];
-  };
-  
-  // Helper function to check if token is native AVAX
-  export const isNativeToken = (ticker) => {
-    return ticker === "AVAX";
-  };
+}
+
+// ✅ Safe getter for address
+export function getTokenAddress(ticker) {
+  const map = getTokenMap();
+  return map[ticker];
+}
+
+// ✅ Native token check — doesn't rely on the map
+export function isNativeToken(ticker) {
+  return ticker === "AVAX";
+}
+
+  export function getTokenMap() {
+    const network = process.env.NETWORK;
+    const map = network === "mainnet" ? MAINNET_TOKEN_MAP : TESTNET_TOKEN_MAP;
+    return map;
+  }

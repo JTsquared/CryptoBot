@@ -1,10 +1,5 @@
 // api/prizePoolRoutes.js
-import express from "express";
-import { PrizePoolService } from "../services/prizePoolService.js";
-import PrizeEscrow from "../database/models/prizeEscrow.js";
-import { ethers } from "ethers";
 import dotenv from "dotenv";
-import Wallet from "../database/models/wallet.js";
 
 // Default env file
 let envFile = ".env";
@@ -20,6 +15,12 @@ if (envArg) {
 
 console.log(`Loading env file: ${envFile}`);
 dotenv.config({ path: envFile });
+
+import express from "express";
+import { PrizePoolService } from "../services/prizePoolService.js";
+import PrizeEscrow from "../database/models/prizeEscrow.js";
+import { ethers } from "ethers";
+import Wallet from "../database/models/wallet.js";
 
 const router = express.Router();
 const provider = new ethers.JsonRpcProvider(process.env.AVALANCHE_RPC);

@@ -1,15 +1,6 @@
-import { Client, Collection, GatewayIntentBits, REST, Routes } from "discord.js";
-import fs from "fs";
-import path from "path";
-import mongoose from "mongoose";
 import dotenv from "dotenv";
-import prizePoolRoutes from "./api/prizePoolRoutes.js";
-import express from "express";
-
-// Default env file
 let envFile = ".env";
 
-// Look for --env=xxx in process args
 const envArg = process.argv.find(arg => arg.startsWith("--env="));
 if (envArg) {
   const file = envArg.split("=")[1];
@@ -20,6 +11,15 @@ if (envArg) {
 
 console.log(`Loading env file: ${envFile}`);
 dotenv.config({ path: envFile });
+
+console.log("NETWORK:", process.env.NETWORK);
+
+import { Client, Collection, GatewayIntentBits, REST, Routes } from "discord.js";
+import fs from "fs";
+import path from "path";
+import mongoose from "mongoose";
+import prizePoolRoutes from "./api/prizePoolRoutes.js";
+import express from "express";
 
 
 const client = new Client({ intents: [

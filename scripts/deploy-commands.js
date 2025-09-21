@@ -1,6 +1,4 @@
-import { REST, Routes } from "discord.js";
 import dotenv from "dotenv";
-import fs from "fs";
 
 // Default env file
 let envFile = ".env";
@@ -16,6 +14,9 @@ if (envArg) {
 
 console.log(`Loading env file: ${envFile}`);
 dotenv.config({ path: envFile });
+
+import { REST, Routes } from "discord.js";
+import fs from "fs";
 
 const commands = [];
 const commandFiles = fs.readdirSync("./commands").filter(file => file.endsWith(".js"));

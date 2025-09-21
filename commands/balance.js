@@ -1,7 +1,10 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import Wallet from "../database/models/wallet.js";
 import { ethers } from "ethers";
-import { TOKEN_MAP, ERC20_ABI, isNativeToken } from "../utils/tokenConfig.js";
+import { ERC20_ABI, isNativeToken } from "../utils/tokenConfig.js";
+import { getTokenMap } from "../utils/tokenConfig.js";
+
+const TOKEN_MAP = getTokenMap();
 
 export default {
   data: new SlashCommandBuilder()
