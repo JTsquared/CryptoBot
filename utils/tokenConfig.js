@@ -11,12 +11,12 @@
 
   export const MAINNET_TOKEN_MAP = {
     "AVAX": "native", // Special case for native AVAX
-    "DISH": "0x40146e96ee5297187022d1ca62a3169b5e45b0a4",
-    "SOCK": "0xbed8e312bcb5c5a283e0030449c254f4c59c092e",
-    "FLD": "0x88f89be3e9b1dc1c5f208696fb9cabfcc684bd5f",
-    "DEGEN": "0x95430905f4b0da123d41ba96600427d2c92b188a",
-    "VAPE": "0x7bddaf6dbab30224aa2116c4291521c7a60d5f55",
-    "BTC.b": "0x152b9d0fdc40c096757f570a51e494bd4b943e50",
+    "DISH": "0x40146E96EE5297187022D1ca62A3169B5e45B0a4",
+    "SOCK": "0xBEd8E312Bcb5C5a283e0030449c254F4c59C092E",
+    "FLD": "0x88F89BE3E9b1dc1C5F208696fb9cABfcc684bD5F",
+    "DEGEN": "0x95430905F4B0dA123d41BA96600427d2C92B188a",
+    "VAPE": "0x7bddaF6DbAB30224AA2116c4291521C7a60D5f55",
+    "BTC.b": "0x152b9d0FdC40C096757F570A51E494bd4b943E50",
     "ART": "0xF99516BC189AF00FF8EfFD5A1f2295B67d70a90e"
   }
 
@@ -66,6 +66,7 @@ export function isNativeToken(ticker) {
 
   export function getTokenMap() {
     const network = process.env.NETWORK;
+    console.log('network: ' + network);
     const map = network === "mainnet" ? MAINNET_TOKEN_MAP : TESTNET_TOKEN_MAP;
     console.log(`DISH address for ‘${network}’: ${map.DISH}`);
     return map;
