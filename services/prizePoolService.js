@@ -159,6 +159,7 @@ export class PrizePoolService {
   // }
 
   async donateToPool(guildId, senderDiscordId, amount, ticker) {
+    TOKEN_MAP = getTokenMap();
     const poolWallet = await this.getPrizePoolWallet(guildId);
     if (!poolWallet) {
       return { success: false, error: "NO_WALLET" };
