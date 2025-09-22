@@ -6,10 +6,7 @@ import { ethers } from "ethers";
 import { decrypt } from "../utils/encryption.js";
 import { ERC20_ABI, getTokenAddress, isNativeToken, testnetMainnetTokenMap } from "../utils/tokenConfig.js";
 import axios from "axios";
-import { getTokenMap, getTokenChoices } from "../utils/tokenConfig.js";
-
-const TOKEN_MAP = getTokenMap();
-const TOKEN_CHOICES = getTokenChoices();
+import { getTokenChoices } from "../utils/tokenConfig.js";
 
 // Price caching utilities
 const priceCache = new Map();
@@ -108,7 +105,7 @@ export default {
       option.setName("token")
         .setDescription("Token to withdraw")
         .setRequired(true)
-        .addChoices(...TOKEN_CHOICES)
+        .addChoices(...getTokenChoices())
     ),
 
   async execute(interaction) {
