@@ -47,6 +47,7 @@
 // ✅ Token choices, evaluated at runtime
 export function getTokenChoices() {
   const map = getTokenMap();
+  console.log(map);
   return Object.keys(map).map(token => ({
     name: token,
     value: token,
