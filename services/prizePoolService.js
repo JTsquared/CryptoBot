@@ -2,14 +2,12 @@
 import PrizePoolWallet from "../database/models/prizePoolWallet.js";
 // import prizePoolWalletSchema from "../database/models/prizePoolWallet.js";
 import { generateWallet } from "../utils/wallet.js"; 
-import { getTokenAddress, isNativeToken, ERC20_ABI } from "../utils/tokenConfig.js";
+import { getTokenMap, isNativeToken, ERC20_ABI } from "../utils/tokenConfig.js";
 import { ethers } from "ethers";
 import { encrypt, decrypt } from "../utils/encryption.js";
-// import { TOKEN_MAP } from "../utils/tokenConfig.js";
 import Wallet from "../database/models/wallet.js";
 import PrizeEscrow from "../database/models/prizeEscrow.js";
 import Transaction from "../database/models/transactionModel.js";
-import { getTokenMap } from "../utils/tokenConfig.js";
 
 const TOKEN_MAP = getTokenMap();
 
@@ -208,6 +206,8 @@ export class PrizePoolService {
           gasLimit: gasEstimate,
         });
       } else {
+        console.log("ENV.NETWORK:", process.env.NETWORK);
+console.log("Using TOKEN_MAP for DISH:", TOKEN_MAP["DISH"]);
         const contractAddress = TOKEN_MAP[ticker];
         console.log("donateToPool => ticker:", ticker, "address:", contractAddress);
         if (!contractAddress) return { success: false, error: "UNKNOWN_TOKEN" };
