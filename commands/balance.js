@@ -4,8 +4,6 @@ import { ethers } from "ethers";
 import { ERC20_ABI, isNativeToken } from "../utils/tokenConfig.js";
 import { getTokenMap } from "../utils/tokenConfig.js";
 
-const TOKEN_MAP = getTokenMap();
-
 export default {
   data: new SlashCommandBuilder()
     .setName("balance")
@@ -32,7 +30,7 @@ export default {
       const balances = [];
       
       // Get balances for all tokens
-      for (const [ticker, contractAddress] of Object.entries(TOKEN_MAP)) {
+      for (const [ticker, contractAddress] of Object.entries(getTokenMap())) {
         try {
           let balance;
           let formattedBalance;

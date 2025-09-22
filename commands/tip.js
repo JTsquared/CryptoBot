@@ -5,10 +5,7 @@ import { ethers } from "ethers";
 import { decrypt } from "../utils/encryption.js";
 import { EmbedBuilder } from "discord.js";
 import { ERC20_ABI, getTokenAddress, isNativeToken } from "../utils/tokenConfig.js";
-import { getTokenMap, getTokenChoices } from "../utils/tokenConfig.js";
-
-const TOKEN_MAP = getTokenMap();
-const TOKEN_CHOICES = getTokenChoices();
+import { getTokenChoices } from "../utils/tokenConfig.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -20,7 +17,7 @@ export default {
       option.setName("token")
         .setDescription("Token to send")
         .setRequired(true)
-        .addChoices(...TOKEN_CHOICES)
+        .addChoices(...getTokenChoices())
     ),
   async execute(interaction) {
     // Start with ephemeral reply for error handling
