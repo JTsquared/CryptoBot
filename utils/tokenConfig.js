@@ -45,14 +45,14 @@
   
   // Get all token choices for slash commands
 // ✅ Token choices, evaluated at runtime
-export function getTokenChoices() {
-  const map = getTokenMap();
-  console.log(map);
-  return Object.keys(map).map(token => ({
-    name: token,
-    value: token,
-  }));
-}
+// export function getTokenChoices() {
+//   const map = getTokenMap();
+//   console.log(map);
+//   return Object.keys(map).map(token => ({
+//     name: token,
+//     value: token,
+//   }));
+// }
 
 // ✅ Safe getter for address
 export function getTokenAddress(ticker) {
@@ -65,10 +65,19 @@ export function isNativeToken(ticker) {
   return ticker === "AVAX";
 }
 
-  export function getTokenMap() {
-    const network = process.env.NETWORK;
-    console.log('network: ' + network);
-    const map = network === "mainnet" ? MAINNET_TOKEN_MAP : TESTNET_TOKEN_MAP;
-    console.log(`DISH address for ‘${network}’: ${map.DISH}`);
-    return map;
+  // export function getTokenMap() {
+  //   const network = process.env.NETWORK;
+  //   console.log('network: ' + network);
+  //   const map = network === "mainnet" ? MAINNET_TOKEN_MAP : TESTNET_TOKEN_MAP;
+  //   console.log(`DISH address for ‘${network}’: ${map.DISH}`);
+  //   return map;
+  // }
+
+  export function getTokenMap(network = process.env.NETWORK) {
+    return network === "mainnet" ? MAINNET_TOKEN_MAP : TESTNET_TOKEN_MAP;
+  }
+  
+  export function getTokenChoices(network = process.env.NETWORK) {
+    const tokenMap = getTokenMap(network);
+    return Object.keys(tokenMap).map(ticker => ({ name: ticker, value: ticker }));
   }
