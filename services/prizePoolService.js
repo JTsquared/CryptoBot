@@ -9,8 +9,6 @@ import Wallet from "../database/models/wallet.js";
 import PrizeEscrow from "../database/models/prizeEscrow.js";
 import Transaction from "../database/models/transactionModel.js";
 
-const TOKEN_MAP = getTokenMap();
-
 export class PrizePoolService {
   constructor(provider) {
     this.provider = provider;
@@ -51,6 +49,7 @@ export class PrizePoolService {
       };
     }
 
+    const TOKEN_MAP = getTokenMap();
     const contractAddress = TOKEN_MAP[ticker];
     if (!contractAddress) {
       console.error(`Unknown token ticker: ${ticker}`);
@@ -108,6 +107,7 @@ export class PrizePoolService {
    * Returns { success, address, balances: [{ ticker, formatted, raw, decimals, hasBalance }] }
    */
   async getAllBalances(guildId, { includeZeros = false } = {}) {
+    const TOKEN_MAP = getTokenMap();
     const wallet = await this.getPrizePoolWallet(guildId);
     if (!wallet) {
       return { success: false, error: "NO_WALLET" };
@@ -261,6 +261,7 @@ console.log("Using TOKEN_MAP for DISH:", TOKEN_MAP["DISH"]);
 
 // Fixed payout method with escrow claim support
 async payout(guildId, recipientDiscordId, toAddress, ticker, amount = "all", isEscrowClaim = false) {
+  const TOKEN_MAP = getTokenMap();
   const poolWallet = await this.getPrizePoolWallet(guildId);
   if (!poolWallet) {
     return { success: false, error: "NO_WALLET" };
