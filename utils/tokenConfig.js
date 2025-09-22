@@ -67,5 +67,6 @@ export function isNativeToken(ticker) {
   export function getTokenMap() {
     const network = process.env.NETWORK;
     const map = network === "mainnet" ? MAINNET_TOKEN_MAP : TESTNET_TOKEN_MAP;
+    console.log(`DISH address for ‘${network}’: ${map.DISH}`);
     return map;
   }
