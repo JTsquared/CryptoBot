@@ -177,12 +177,16 @@ export class PrizePoolService {
       const signer = new ethers.Wallet(decryptedKey, provider);
   
       let tx;
+      console.log("isNativeToken?", ticker, isNativeToken(ticker));
+
       if (isNativeToken(ticker)) {
+        console.log("...");
         const amountWei = ethers.parseEther(amount.toString());
-  
+        console.log("....");
         const feeData = await provider.getFeeData();
         if (!feeData.gasPrice) return { success: false, error: "NETWORK_ERROR" };
   
+        console.log(".....");
         const gasEstimate = await provider.estimateGas({
           to: poolWallet.address,
           value: amountWei,
@@ -190,11 +194,13 @@ export class PrizePoolService {
         });
   
         const gasCost = gasEstimate * feeData.gasPrice;
+        console.log("...6");
         const balance = await provider.getBalance(senderWalletDoc.address);
         if (balance < amountWei + gasCost) {
           return { success: false, error: "INSUFFICIENT_FUNDS" };
         }
   
+        console.log("...7");
         tx = await signer.sendTransaction({
           to: poolWallet.address,
           value: amountWei,
@@ -203,11 +209,16 @@ export class PrizePoolService {
         });
       } else {
         const contractAddress = TOKEN_MAP[ticker];
+        console.log("donateToPool => ticker:", ticker, "address:", contractAddress);
         if (!contractAddress) return { success: false, error: "UNKNOWN_TOKEN" };
   
+        console.log("...how bout now");
         const token = new ethers.Contract(contractAddress, ERC20_ABI, signer);
   
+        console.log("token: " + token);
+        console.log("decimals: " + token.decimals());
         const decimals = await token.decimals();
+        console.log("parsing");
         const amountWei = ethers.parseUnits(amount.toString(), decimals);
   
         const balance = await token.balanceOf(senderWalletDoc.address);
