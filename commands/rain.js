@@ -22,7 +22,7 @@ export default {
         .setDescription("Total amount to distribute")
         .setRequired(true)
     )
-    .addStringOption(option => 
+    .addStringOption(option =>
       option.setName("token")
         .setDescription("Token to send")
         .setRequired(true)
@@ -34,6 +34,16 @@ export default {
         .setDescription("Number of users to randomly select (optional - defaults to all eligible users)")
         .setRequired(false)
         .setMinValue(1)
+    )
+    .addStringOption(option =>
+      option
+        .setName("activity_filter")
+        .setDescription("Filter by user activity (optional - defaults to any)")
+        .setRequired(false)
+        .addChoices(
+          { name: "any", value: "any" },
+          { name: "active", value: "active" }
+        )
     ),
 
   async execute(interaction) {
@@ -45,6 +55,7 @@ export default {
     const totalAmount = interaction.options.getNumber("amount");
     const tokenTicker = interaction.options.getString("token");
     const userCount = interaction.options.getInteger("user_count"); // This will be null if not provided
+    const activityFilter = interaction.options.getString("activity_filter") || "any";
 
     if (!totalAmount || totalAmount <= 0) {
       return interaction.editReply("Enter a valid amount greater than 0.");
@@ -101,6 +112,52 @@ export default {
       return interaction.editReply("No eligible members with wallets found to rain on.");
     }
 
+    // 🔹 Sort by activity if requested
+    if (activityFilter === "active") {
+      console.log("Fetching message activity for eligible members...");
+      const startTime = Date.now();
+
+      const activityMap = new Map(); // userId -> messageCount
+
+      // Initialize all eligible members with 0 messages
+      eligibleMembers.forEach(member => {
+        activityMap.set(member.id, 0);
+      });
+
+      // Fetch recent messages from all text channels
+      const channels = interaction.guild.channels.cache.filter(
+        ch => ch.isTextBased() && ch.viewable
+      );
+
+      console.log(`Scanning ${channels.size} channels for activity...`);
+
+      for (const [channelId, channel] of channels) {
+        try {
+          // Fetch last 100 messages from each channel (adjust as needed)
+          const messages = await channel.messages.fetch({ limit: 100 });
+
+          messages.forEach(msg => {
+            if (activityMap.has(msg.author.id)) {
+              activityMap.set(msg.author.id, activityMap.get(msg.author.id) + 1);
+            }
+          });
+        } catch (err) {
+          console.log(`Could not fetch messages from channel ${channel.name}:`, err.message);
+        }
+      }
+
+      // Sort eligible members by activity (descending)
+      eligibleMembers.sort((a, b) => {
+        const aCount = activityMap.get(a.id) || 0;
+        const bCount = activityMap.get(b.id) || 0;
+        return bCount - aCount;
+      });
+
+      const topActivity = activityMap.get(eligibleMembers[0].id);
+      const endTime = Date.now();
+      console.log(`Activity scan completed in ${(endTime - startTime) / 1000}s. Top user has ${topActivity} messages.`);
+    }
+
     // Check if user requested more users than available
     if (userCount && userCount > eligibleMembers.length) {
       return interaction.editReply(
@@ -108,15 +165,23 @@ export default {
       );
     }
 
-    // 🔹 NEW: Random selection logic
+    // 🔹 Selection logic
     let selectedMembers = eligibleMembers;
     let selectionInfo = "";
 
     if (userCount && userCount < eligibleMembers.length) {
-      // Randomly select the specified number of users
-      const shuffled = [...eligibleMembers].sort(() => 0.5 - Math.random());
-      selectedMembers = shuffled.slice(0, userCount);
-      selectionInfo = ` (randomly selected ${userCount} out of ${eligibleMembers.length} eligible users)`;
+      // Take top N most active users (already sorted if activityFilter === "active")
+      if (activityFilter === "active") {
+        selectedMembers = eligibleMembers.slice(0, userCount);
+        selectionInfo = ` (selected ${userCount} most active users out of ${eligibleMembers.length} eligible)`;
+      } else {
+        // Randomly select the specified number of users
+        const shuffled = [...eligibleMembers].sort(() => 0.5 - Math.random());
+        selectedMembers = shuffled.slice(0, userCount);
+        selectionInfo = ` (randomly selected ${userCount} out of ${eligibleMembers.length} eligible users)`;
+      }
+    } else if (activityFilter === "active") {
+      selectionInfo = ` (sorted by activity - most active users first)`;
     }
 
     // Divide only among selected members
