@@ -101,6 +101,13 @@ export default {
       return interaction.editReply("No eligible members with wallets found to rain on.");
     }
 
+    // Check if user requested more users than available
+    if (userCount && userCount > eligibleMembers.length) {
+      return interaction.editReply(
+        `⚠️ Not enough eligible users. You requested ${userCount} users, but only ${eligibleMembers.length} eligible user${eligibleMembers.length === 1 ? '' : 's'} with ${eligibleMembers.length === 1 ? 'a wallet was' : 'wallets were'} found for this role.`
+      );
+    }
+
     // 🔹 NEW: Random selection logic
     let selectedMembers = eligibleMembers;
     let selectionInfo = "";
@@ -110,9 +117,6 @@ export default {
       const shuffled = [...eligibleMembers].sort(() => 0.5 - Math.random());
       selectedMembers = shuffled.slice(0, userCount);
       selectionInfo = ` (randomly selected ${userCount} out of ${eligibleMembers.length} eligible users)`;
-    } else if (userCount && userCount >= eligibleMembers.length) {
-      // User requested more than available, use all
-      selectionInfo = ` (requested ${userCount} users, but only ${eligibleMembers.length} eligible users available)`;
     }
 
     // Divide only among selected members
