@@ -40,7 +40,8 @@
     "function balanceOf(address owner) view returns (uint256)",
     "function decimals() view returns (uint8)",
     "function symbol() view returns (string)",
-    "function name() view returns (string)"
+    "function name() view returns (string)",
+    "event Transfer(address indexed from, address indexed to, uint256 value)"
   ];
   
   // Get all token choices for slash commands
@@ -57,6 +58,7 @@
 // ✅ Safe getter for address
 export function getTokenAddress(ticker) {
   const map = getTokenMap();
+  console.log(`Getting address for ticker: ${ticker}`);
   return map[ticker];
 }
 
@@ -74,6 +76,7 @@ export function isNativeToken(ticker) {
   // }
 
   export function getTokenMap(network = process.env.NETWORK) {
+    console.log('network: ' + network);
     return network === "mainnet" ? MAINNET_TOKEN_MAP : TESTNET_TOKEN_MAP;
   }
   
