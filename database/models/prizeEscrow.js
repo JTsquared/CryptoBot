@@ -7,6 +7,7 @@ const EscrowSchema = new mongoose.Schema({
   amount: { type: String, required: true }, // store as string to avoid float precision issues
   createdAt: { type: Date, default: Date.now },
   claimed: { type: Boolean, default: false },
+  metadata: { type: mongoose.Schema.Types.Mixed, default: {} }, // Optional metadata (e.g., bountyId, isBounty)
 });
 
 export default mongoose.model("PrizeEscrow", EscrowSchema);
