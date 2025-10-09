@@ -12,7 +12,17 @@ export const MAINNET_NFT_MAP = {
   "OBEEZ": {
     address: "0x5E870b3d315F7A8d7089E8B829eD8C3d9cef06eF",
     standard: "ERC721",
-    name: "Obeez"
+    name: "OBEEZ"
+  },
+  "SALVOR": {
+    address: "0xCE4Fee23Ab35D0d9A4b6b644881dDD8aDEBeb300",
+    standard: "ERC721",
+    name: "SALVOR"
+  },
+  "DIMISH": {
+    address: "0xad86D628138467DE4291E351AC5A64c087B89e72",
+    standard: "ERC721",
+    name: "DIMISH"
   }
 };
 
