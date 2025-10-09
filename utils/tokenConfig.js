@@ -43,6 +43,20 @@
     "function name() view returns (string)",
     "event Transfer(address indexed from, address indexed to, uint256 value)"
   ];
+
+  // ERC-721 ABI (for NFTs)
+  export const ERC721_ABI = [
+    "function balanceOf(address owner) view returns (uint256)",
+    "function transferFrom(address from, address to, uint256 tokenId)",
+    "function safeTransferFrom(address from, address to, uint256 tokenId)",
+    "function ownerOf(uint256 tokenId) view returns (address)",
+    "function tokenURI(uint256 tokenId) view returns (string)",
+    "function approve(address to, uint256 tokenId)",
+    "function setApprovalForAll(address operator, bool approved)",
+    "function getApproved(uint256 tokenId) view returns (address)",
+    "function isApprovedForAll(address owner, address operator) view returns (bool)",
+    "event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)"
+  ];
   
   // Get all token choices for slash commands
 // ✅ Token choices, evaluated at runtime

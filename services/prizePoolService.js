@@ -1,8 +1,9 @@
 // services/prizePoolService.js
 import PrizePoolWallet from "../database/models/prizePoolWallet.js";
 // import prizePoolWalletSchema from "../database/models/prizePoolWallet.js";
-import { generateWallet } from "../utils/wallet.js"; 
-import { getTokenMap, isNativeToken, ERC20_ABI } from "../utils/tokenConfig.js";
+import { generateWallet } from "../utils/wallet.js";
+import { getTokenMap, isNativeToken, ERC20_ABI, ERC721_ABI } from "../utils/tokenConfig.js";
+import { getNFTMap, isNFTCollection, getNFTAddress } from "../utils/nftConfig.js";
 import { ethers } from "ethers";
 import { encrypt, decrypt } from "../utils/encryption.js";
 import Wallet from "../database/models/wallet.js";
@@ -164,17 +165,17 @@ export class PrizePoolService {
     if (!poolWallet) {
       return { success: false, error: "NO_WALLET" };
     }
-  
+
     const senderWalletDoc = await Wallet.findOne({ discordId: senderDiscordId });
     if (!senderWalletDoc) {
       return { success: false, error: "NO_SENDER_WALLET" };
     }
-  
+
     try {
       const provider = this.provider;
       const decryptedKey = await decrypt(senderWalletDoc.privateKey);
       const signer = new ethers.Wallet(decryptedKey, provider);
-  
+
       let tx;
       console.log("isNativeToken?", ticker, isNativeToken(ticker));
 
@@ -184,21 +185,21 @@ export class PrizePoolService {
         console.log("....");
         const feeData = await provider.getFeeData();
         if (!feeData.gasPrice) return { success: false, error: "NETWORK_ERROR" };
-  
+
         console.log(".....");
         const gasEstimate = await provider.estimateGas({
           to: poolWallet.address,
           value: amountWei,
           from: senderWalletDoc.address,
         });
-  
+
         const gasCost = gasEstimate * feeData.gasPrice;
         console.log("...6");
         const balance = await provider.getBalance(senderWalletDoc.address);
         if (balance < amountWei + gasCost) {
           return { success: false, error: "INSUFFICIENT_FUNDS" };
         }
-  
+
         console.log("...7");
         tx = await signer.sendTransaction({
           to: poolWallet.address,
@@ -212,40 +213,40 @@ console.log("Using TOKEN_MAP for DISH:", TOKEN_MAP["DISH"]);
         const contractAddress = TOKEN_MAP[ticker];
         console.log("donateToPool => ticker:", ticker, "address:", contractAddress);
         if (!contractAddress) return { success: false, error: "UNKNOWN_TOKEN" };
-  
+
         console.log("...how bout now");
         const token = new ethers.Contract(contractAddress, ERC20_ABI, signer);
-  
+
         console.log("token: " + token);
         console.log("decimals: " + token.decimals());
         const decimals = await token.decimals();
         console.log("parsing");
         const amountWei = ethers.parseUnits(amount.toString(), decimals);
-  
+
         const balance = await token.balanceOf(senderWalletDoc.address);
         if (balance < amountWei) {
           return { success: false, error: "INSUFFICIENT_FUNDS" };
         }
-  
+
         const feeData = await provider.getFeeData();
         if (!feeData.gasPrice) return { success: false, error: "NETWORK_ERROR" };
-  
+
         const gasEstimate = await token.transfer.estimateGas(poolWallet.address, amountWei);
         const gasCost = gasEstimate * feeData.gasPrice;
-  
+
         const avaxBalance = await provider.getBalance(senderWalletDoc.address);
         if (avaxBalance < gasCost) {
           return { success: false, error: "INSUFFICIENT_GAS" };
         }
-  
+
         tx = await token.transfer(poolWallet.address, amountWei, {
           gasPrice: feeData.gasPrice,
           gasLimit: gasEstimate,
         });
       }
-  
+
       await tx.wait();
-  
+
       return {
         success: true,
         txHash: tx.hash,
@@ -255,6 +256,96 @@ console.log("Using TOKEN_MAP for DISH:", TOKEN_MAP["DISH"]);
       };
     } catch (err) {
       console.error("donateToPool error:", err);
+      return { success: false, error: "TX_FAILED", detail: err.message };
+    }
+  }
+
+  async payDeveloper(senderDiscordId, amount, ticker, developerAddress) {
+    const TOKEN_MAP = getTokenMap();
+
+    if (!developerAddress) {
+      return { success: false, error: "NO_DEVELOPER_WALLET" };
+    }
+
+    const senderWalletDoc = await Wallet.findOne({ discordId: senderDiscordId });
+    if (!senderWalletDoc) {
+      return { success: false, error: "NO_SENDER_WALLET" };
+    }
+
+    try {
+      const provider = this.provider;
+      const decryptedKey = await decrypt(senderWalletDoc.privateKey);
+      const signer = new ethers.Wallet(decryptedKey, provider);
+
+      let tx;
+      console.log("payDeveloper: isNativeToken?", ticker, isNativeToken(ticker));
+
+      if (isNativeToken(ticker)) {
+        const amountWei = ethers.parseEther(amount.toString());
+        const feeData = await provider.getFeeData();
+        if (!feeData.gasPrice) return { success: false, error: "NETWORK_ERROR" };
+
+        const gasEstimate = await provider.estimateGas({
+          to: developerAddress,
+          value: amountWei,
+          from: senderWalletDoc.address,
+        });
+
+        const gasCost = gasEstimate * feeData.gasPrice;
+        const balance = await provider.getBalance(senderWalletDoc.address);
+        if (balance < amountWei + gasCost) {
+          return { success: false, error: "INSUFFICIENT_FUNDS" };
+        }
+
+        tx = await signer.sendTransaction({
+          to: developerAddress,
+          value: amountWei,
+          gasPrice: feeData.gasPrice,
+          gasLimit: gasEstimate,
+        });
+      } else {
+        const contractAddress = TOKEN_MAP[ticker];
+        console.log("payDeveloper => ticker:", ticker, "address:", contractAddress);
+        if (!contractAddress) return { success: false, error: "UNKNOWN_TOKEN" };
+
+        const token = new ethers.Contract(contractAddress, ERC20_ABI, signer);
+
+        const decimals = await token.decimals();
+        const amountWei = ethers.parseUnits(amount.toString(), decimals);
+
+        const balance = await token.balanceOf(senderWalletDoc.address);
+        if (balance < amountWei) {
+          return { success: false, error: "INSUFFICIENT_FUNDS" };
+        }
+
+        const feeData = await provider.getFeeData();
+        if (!feeData.gasPrice) return { success: false, error: "NETWORK_ERROR" };
+
+        const gasEstimate = await token.transfer.estimateGas(developerAddress, amountWei);
+        const gasCost = gasEstimate * feeData.gasPrice;
+
+        const avaxBalance = await provider.getBalance(senderWalletDoc.address);
+        if (avaxBalance < gasCost) {
+          return { success: false, error: "INSUFFICIENT_GAS" };
+        }
+
+        tx = await token.transfer(developerAddress, amountWei, {
+          gasPrice: feeData.gasPrice,
+          gasLimit: gasEstimate,
+        });
+      }
+
+      await tx.wait();
+
+      return {
+        success: true,
+        txHash: tx.hash,
+        amount,
+        ticker,
+        developerAddress,
+      };
+    } catch (err) {
+      console.error("payDeveloper error:", err);
       return { success: false, error: "TX_FAILED", detail: err.message };
     }
   }
@@ -728,37 +819,64 @@ async payout(guildId, recipientDiscordId, toAddress, ticker, amount = "all", isE
   
       for (const entry of pendingClaims) {
         try {
-          // Pass isEscrowClaim = true to skip reserved balance calculations
-          const payoutResult = await this.payout(
-            entry.guildId,
-            entry.discordId,
-            wallet.address, // Use wallet.address instead of entry.toAddress
-            entry.token,
-            entry.amount,
-            true // isEscrowClaim = true
-          );
-  
-          if (payoutResult.success) {
-            // Mark as claimed and save
-            entry.claimed = true;
-            await entry.save();
-            
-            // Use the transaction info from the new response format
-            if (payoutResult.txs && payoutResult.txs.length > 0) {
-              const tx = payoutResult.txs[0]; // Should only be one for single claims
-              successMsgs.push(`✅ Claimed ${tx.amount} ${tx.token} - TX: ${tx.txHash}`);
+          let payoutResult;
+
+          // Check if this is an NFT escrow
+          if (entry.isNFT) {
+            // Use NFT payout for NFT escrows
+            payoutResult = await this.payoutNFT(
+              entry.guildId,
+              entry.discordId,
+              wallet.address,
+              entry.token, // collection
+              entry.tokenId
+            );
+
+            if (payoutResult.success) {
+              // Mark as claimed and save
+              entry.claimed = true;
+              await entry.save();
+              successMsgs.push(`✅ Claimed ${entry.token} #${entry.tokenId} - TX: ${payoutResult.txHash}`);
             } else {
-              successMsgs.push(`✅ Claimed ${entry.amount} ${entry.token}`);
+              failMsgs.push(
+                `⚠️ Failed to claim ${entry.token} #${entry.tokenId}: ${payoutResult.error}`
+              );
             }
           } else {
-            failMsgs.push(
-              `⚠️ Failed to claim ${entry.amount} ${entry.token}: ${payoutResult.error}`
+            // Use regular token payout for token escrows
+            // Pass isEscrowClaim = true to skip reserved balance calculations
+            payoutResult = await this.payout(
+              entry.guildId,
+              entry.discordId,
+              wallet.address,
+              entry.token,
+              entry.amount,
+              true // isEscrowClaim = true
             );
+
+            if (payoutResult.success) {
+              // Mark as claimed and save
+              entry.claimed = true;
+              await entry.save();
+
+              // Use the transaction info from the new response format
+              if (payoutResult.txs && payoutResult.txs.length > 0) {
+                const tx = payoutResult.txs[0]; // Should only be one for single claims
+                successMsgs.push(`✅ Claimed ${tx.amount} ${tx.token} - TX: ${tx.txHash}`);
+              } else {
+                successMsgs.push(`✅ Claimed ${entry.amount} ${entry.token}`);
+              }
+            } else {
+              failMsgs.push(
+                `⚠️ Failed to claim ${entry.amount} ${entry.token}: ${payoutResult.error}`
+              );
+            }
           }
         } catch (err) {
           console.error("Claim payout error:", err);
+          const displayName = entry.isNFT ? `${entry.token} #${entry.tokenId}` : `${entry.amount} ${entry.token}`;
           failMsgs.push(
-            `⚠️ Error claiming ${entry.amount} ${entry.token}. Try again later.`
+            `⚠️ Error claiming ${displayName}. Try again later.`
           );
         }
       }
@@ -889,6 +1007,383 @@ async payout(guildId, recipientDiscordId, toAddress, ticker, amount = "all", isE
     } catch (err) {
       console.error("Error creating escrow entries:", err);
       return { success: false, error: "SERVER_ERROR" };
+    }
+  }
+
+  // =====================
+  // NFT-specific methods
+  // =====================
+
+  /**
+   * Fetch NFT metadata from tokenURI
+   * Returns { success, name, imageUrl } or { success: false, error }
+   */
+  async fetchNFTMetadata(contractAddress, tokenId) {
+    try {
+      const nftContract = new ethers.Contract(contractAddress, ERC721_ABI, this.provider);
+      const tokenURI = await nftContract.tokenURI(tokenId);
+
+      // Handle IPFS URLs
+      let metadataURL = tokenURI;
+      if (tokenURI.startsWith('ipfs://')) {
+        metadataURL = tokenURI.replace('ipfs://', 'https://ipfs.io/ipfs/');
+      }
+
+      // Fetch metadata JSON
+      const response = await fetch(metadataURL);
+      if (!response.ok) {
+        return { success: false, error: "METADATA_FETCH_FAILED" };
+      }
+
+      const metadata = await response.json();
+
+      // Extract name and image
+      let imageUrl = metadata.image || metadata.image_url || '';
+      if (imageUrl.startsWith('ipfs://')) {
+        imageUrl = imageUrl.replace('ipfs://', 'https://ipfs.io/ipfs/');
+      }
+
+      return {
+        success: true,
+        name: metadata.name || `NFT #${tokenId}`,
+        imageUrl: imageUrl
+      };
+    } catch (err) {
+      console.error('Error fetching NFT metadata:', err);
+      return {
+        success: false,
+        error: "METADATA_ERROR",
+        detail: err.message
+      };
+    }
+  }
+
+  /**
+   * Donate NFT from user wallet to prize pool wallet
+   * Handles approval automatically
+   */
+  async donateNFT(guildId, senderDiscordId, collection, tokenId) {
+    const NFT_MAP = getNFTMap();
+    const poolWallet = await this.getPrizePoolWallet(guildId);
+    if (!poolWallet) {
+      return { success: false, error: "NO_WALLET" };
+    }
+
+    const senderWalletDoc = await Wallet.findOne({ discordId: senderDiscordId });
+    if (!senderWalletDoc) {
+      return { success: false, error: "NO_SENDER_WALLET" };
+    }
+
+    const nftInfo = NFT_MAP[collection];
+    if (!nftInfo) {
+      return { success: false, error: "UNKNOWN_NFT_COLLECTION" };
+    }
+
+    try {
+      const provider = this.provider;
+      const decryptedKey = await decrypt(senderWalletDoc.privateKey);
+      const signer = new ethers.Wallet(decryptedKey, provider);
+
+      const nftContract = new ethers.Contract(nftInfo.address, ERC721_ABI, signer);
+
+      // Verify sender owns the NFT
+      const owner = await nftContract.ownerOf(tokenId);
+      if (owner.toLowerCase() !== senderWalletDoc.address.toLowerCase()) {
+        return { success: false, error: "NOT_NFT_OWNER" };
+      }
+
+      // Check if already approved
+      const approvedAddress = await nftContract.getApproved(tokenId);
+      const isApprovedForAll = await nftContract.isApprovedForAll(senderWalletDoc.address, poolWallet.address);
+
+      // Auto-approve if needed
+      if (approvedAddress.toLowerCase() !== poolWallet.address.toLowerCase() && !isApprovedForAll) {
+        console.log(`Auto-approving NFT ${collection} #${tokenId} for transfer`);
+        const feeData = await provider.getFeeData();
+        if (!feeData.gasPrice) return { success: false, error: "NETWORK_ERROR" };
+
+        const approveTx = await nftContract.approve(poolWallet.address, tokenId, {
+          gasPrice: feeData.gasPrice
+        });
+        await approveTx.wait();
+        console.log(`Approval successful: ${approveTx.hash}`);
+      }
+
+      // Transfer NFT to pool
+      const feeData = await provider.getFeeData();
+      if (!feeData.gasPrice) return { success: false, error: "NETWORK_ERROR" };
+
+      const gasEstimate = await nftContract.transferFrom.estimateGas(
+        senderWalletDoc.address,
+        poolWallet.address,
+        tokenId
+      );
+
+      const gasCost = gasEstimate * feeData.gasPrice;
+      const avaxBalance = await provider.getBalance(senderWalletDoc.address);
+      if (avaxBalance < gasCost) {
+        return { success: false, error: "INSUFFICIENT_GAS" };
+      }
+
+      const tx = await nftContract.transferFrom(
+        senderWalletDoc.address,
+        poolWallet.address,
+        tokenId,
+        {
+          gasPrice: feeData.gasPrice,
+          gasLimit: gasEstimate
+        }
+      );
+
+      await tx.wait();
+
+      // Fetch metadata for caching
+      const metadata = await this.fetchNFTMetadata(nftInfo.address, tokenId);
+
+      return {
+        success: true,
+        txHash: tx.hash,
+        collection,
+        tokenId,
+        poolAddress: poolWallet.address,
+        metadata: metadata.success ? { name: metadata.name, imageUrl: metadata.imageUrl } : null
+      };
+    } catch (err) {
+      console.error('donateNFT error:', err);
+      return { success: false, error: "TX_FAILED", detail: err.message };
+    }
+  }
+
+  /**
+   * Payout NFT from prize pool to recipient
+   */
+  async payoutNFT(guildId, recipientDiscordId, toAddress, collection, tokenId) {
+    const NFT_MAP = getNFTMap();
+    const poolWallet = await this.getPrizePoolWallet(guildId);
+    if (!poolWallet) {
+      return { success: false, error: "NO_WALLET" };
+    }
+
+    const nftInfo = NFT_MAP[collection];
+    if (!nftInfo) {
+      return { success: false, error: "UNKNOWN_NFT_COLLECTION" };
+    }
+
+    try {
+      const provider = this.provider;
+      const decryptedKey = await decrypt(poolWallet.privateKey);
+      const signer = new ethers.Wallet(decryptedKey, provider);
+
+      const nftContract = new ethers.Contract(nftInfo.address, ERC721_ABI, signer);
+
+      // Verify pool owns the NFT
+      const owner = await nftContract.ownerOf(tokenId);
+      if (owner.toLowerCase() !== poolWallet.address.toLowerCase()) {
+        return { success: false, error: "POOL_NOT_OWNER" };
+      }
+
+      // Transfer NFT to recipient
+      const feeData = await provider.getFeeData();
+      if (!feeData.gasPrice) return { success: false, error: "NETWORK_ERROR" };
+
+      const gasEstimate = await nftContract.transferFrom.estimateGas(
+        poolWallet.address,
+        toAddress,
+        tokenId
+      );
+
+      const gasCost = gasEstimate * feeData.gasPrice;
+      const poolAvaxBalance = await provider.getBalance(poolWallet.address);
+      if (poolAvaxBalance < gasCost) {
+        return { success: false, error: "INSUFFICIENT_GAS" };
+      }
+
+      const tx = await nftContract.transferFrom(
+        poolWallet.address,
+        toAddress,
+        tokenId,
+        {
+          gasPrice: feeData.gasPrice,
+          gasLimit: gasEstimate
+        }
+      );
+
+      await tx.wait();
+
+      console.log(`✅ Successfully transferred NFT ${collection} #${tokenId} to ${toAddress} - TX: ${tx.hash}`);
+
+      return {
+        success: true,
+        txHash: tx.hash,
+        collection,
+        tokenId,
+        recipientAddress: toAddress
+      };
+    } catch (err) {
+      console.error('payoutNFT error:', err);
+      return { success: false, error: "TX_FAILED", detail: err.message };
+    }
+  }
+
+  /**
+   * Verify that a wallet owns a specific NFT
+   */
+  async verifyNFTOwnership(walletAddress, collection, tokenId) {
+    const NFT_MAP = getNFTMap();
+    const nftInfo = NFT_MAP[collection];
+
+    if (!nftInfo) {
+      return { success: false, error: "UNKNOWN_NFT_COLLECTION" };
+    }
+
+    try {
+      const nftContract = new ethers.Contract(nftInfo.address, ERC721_ABI, this.provider);
+      const owner = await nftContract.ownerOf(tokenId);
+
+      if (owner.toLowerCase() === walletAddress.toLowerCase()) {
+        return { success: true, owner: walletAddress };
+      } else {
+        return { success: false, error: "NOT_OWNER", actualOwner: owner };
+      }
+    } catch (err) {
+      console.error('NFT ownership verification error:', err);
+      return { success: false, error: "VERIFICATION_FAILED", detail: err.message };
+    }
+  }
+
+  /**
+   * Get NFT balances for a wallet address
+   */
+  async getNFTBalances(walletAddress) {
+    const NFT_MAP = getNFTMap();
+    const nfts = [];
+
+    for (const [collection, nftInfo] of Object.entries(NFT_MAP)) {
+      try {
+        const nftContract = new ethers.Contract(nftInfo.address, ERC721_ABI, this.provider);
+        const balance = await nftContract.balanceOf(walletAddress);
+        const balanceNum = Number(balance);
+
+        if (balanceNum > 0) {
+          nfts.push({
+            collection,
+            name: nftInfo.name,
+            count: balanceNum
+          });
+        }
+      } catch (err) {
+        console.error(`Error fetching ${collection} NFT balance:`, err);
+        // Continue with other NFTs if one fails
+      }
+    }
+
+    return { success: true, nfts };
+  }
+
+  /**
+   * Withdraw NFT from prize pool with 0.02 AVAX flat fee
+   */
+  async withdrawNFT(senderDiscordId, toAddress, collection, tokenId, guildId) {
+    const WITHDRAWAL_FEE = "0.02"; // 0.02 AVAX flat fee
+    const NFT_MAP = getNFTMap();
+
+    const poolWallet = await this.getPrizePoolWallet(guildId);
+    if (!poolWallet) {
+      return { success: false, error: "NO_WALLET" };
+    }
+
+    const senderWalletDoc = await Wallet.findOne({ discordId: senderDiscordId });
+    if (!senderWalletDoc) {
+      return { success: false, error: "NO_SENDER_WALLET" };
+    }
+
+    const nftInfo = NFT_MAP[collection];
+    if (!nftInfo) {
+      return { success: false, error: "UNKNOWN_NFT_COLLECTION" };
+    }
+
+    try {
+      const provider = this.provider;
+
+      // Step 1: Charge withdrawal fee
+      const decryptedSenderKey = await decrypt(senderWalletDoc.privateKey);
+      const senderSigner = new ethers.Wallet(decryptedSenderKey, provider);
+
+      const feeWei = ethers.parseEther(WITHDRAWAL_FEE);
+      const feeData = await provider.getFeeData();
+      if (!feeData.gasPrice) return { success: false, error: "NETWORK_ERROR" };
+
+      const feeGasEstimate = await provider.estimateGas({
+        to: poolWallet.address,
+        value: feeWei,
+        from: senderWalletDoc.address
+      });
+
+      const feeGasCost = feeGasEstimate * feeData.gasPrice;
+      const senderBalance = await provider.getBalance(senderWalletDoc.address);
+      if (senderBalance < feeWei + feeGasCost) {
+        return { success: false, error: "INSUFFICIENT_FUNDS_FOR_FEE" };
+      }
+
+      const feeTx = await senderSigner.sendTransaction({
+        to: poolWallet.address,
+        value: feeWei,
+        gasPrice: feeData.gasPrice,
+        gasLimit: feeGasEstimate
+      });
+      await feeTx.wait();
+      console.log(`Withdrawal fee paid: ${WITHDRAWAL_FEE} AVAX - TX: ${feeTx.hash}`);
+
+      // Step 2: Transfer NFT from pool to user's specified address
+      const decryptedPoolKey = await decrypt(poolWallet.privateKey);
+      const poolSigner = new ethers.Wallet(decryptedPoolKey, provider);
+
+      const nftContract = new ethers.Contract(nftInfo.address, ERC721_ABI, poolSigner);
+
+      // Verify pool owns the NFT
+      const owner = await nftContract.ownerOf(tokenId);
+      if (owner.toLowerCase() !== poolWallet.address.toLowerCase()) {
+        return { success: false, error: "POOL_NOT_OWNER" };
+      }
+
+      const transferGasEstimate = await nftContract.transferFrom.estimateGas(
+        poolWallet.address,
+        toAddress,
+        tokenId
+      );
+
+      const transferGasCost = transferGasEstimate * feeData.gasPrice;
+      const poolBalance = await provider.getBalance(poolWallet.address);
+      if (poolBalance < transferGasCost) {
+        return { success: false, error: "INSUFFICIENT_POOL_GAS" };
+      }
+
+      const transferTx = await nftContract.transferFrom(
+        poolWallet.address,
+        toAddress,
+        tokenId,
+        {
+          gasPrice: feeData.gasPrice,
+          gasLimit: transferGasEstimate
+        }
+      );
+
+      await transferTx.wait();
+
+      console.log(`✅ NFT withdrawn: ${collection} #${tokenId} to ${toAddress} - TX: ${transferTx.hash}`);
+
+      return {
+        success: true,
+        feeTxHash: feeTx.hash,
+        transferTxHash: transferTx.hash,
+        collection,
+        tokenId,
+        withdrawalFee: WITHDRAWAL_FEE,
+        recipientAddress: toAddress
+      };
+    } catch (err) {
+      console.error('withdrawNFT error:', err);
+      return { success: false, error: "TX_FAILED", detail: err.message };
     }
   }
 }

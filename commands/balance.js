@@ -1,8 +1,8 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import Wallet from "../database/models/wallet.js";
 import { ethers } from "ethers";
-import { ERC20_ABI, isNativeToken } from "../utils/tokenConfig.js";
-import { getTokenMap } from "../utils/tokenConfig.js";
+import { ERC20_ABI, ERC721_ABI, isNativeToken, getTokenMap } from "../utils/tokenConfig.js";
+import { getNFTMap } from "../utils/nftConfig.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -67,6 +67,29 @@ export default {
         return interaction.editReply("❌ Could not fetch any token balances. Please try again later.");
       }
 
+      // Get NFT balances
+      const nftBalances = [];
+      const NFT_MAP = getNFTMap();
+
+      for (const [collection, nftInfo] of Object.entries(NFT_MAP)) {
+        try {
+          const nftContract = new ethers.Contract(nftInfo.address, ERC721_ABI, provider);
+          const balance = await nftContract.balanceOf(walletDoc.address);
+          const balanceNum = Number(balance);
+
+          if (balanceNum > 0) {
+            nftBalances.push({
+              collection,
+              name: nftInfo.name,
+              count: balanceNum
+            });
+          }
+        } catch (nftError) {
+          console.error(`Error fetching ${collection} NFT balance:`, nftError);
+          // Continue with other NFTs if one fails
+        }
+      }
+
       // Create embed with balance information
       const embed = new EmbedBuilder()
         .setColor(0x00ff99)
@@ -93,13 +116,23 @@ export default {
 
       // Add main balance field
       embed.addFields({
-        name: "💎 Balances",
-        value: balanceFields.join('\n') || "No balances found",
+        name: "💎 Token Balances",
+        value: balanceFields.join('\n') || "No token balances found",
         inline: false
       });
 
+      // Add NFT balances if any
+      if (nftBalances.length > 0) {
+        const nftFields = nftBalances.map(nft => `**${nft.name}:** ${nft.count} NFT${nft.count > 1 ? 's' : ''}`);
+        embed.addFields({
+          name: "🖼️ NFT Balances",
+          value: nftFields.join('\n'),
+          inline: false
+        });
+      }
+
       // Add helpful note if user only has AVAX
-      if (!hasAnyTokens && balanceFields.length === 1) {
+      if (!hasAnyTokens && balanceFields.length === 1 && nftBalances.length === 0) {
         embed.addFields({
           name: "ℹ️ Note",
           value: "You currently only have AVAX. Use `/tip` or `/rain` to send tokens to others!",
