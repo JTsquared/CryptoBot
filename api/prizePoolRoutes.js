@@ -59,8 +59,18 @@ router.get("/balances/:guildId", requireGuildAccess, async (req, res) => {
     const includeZeros = String(req.query.includeZeros || "false") === "true";
 
     const out = await prizePoolService.getAllBalances(guildId, appId, { includeZeros });
+
+    // Build match query for escrow - filter by guildId and optionally appId
+    const escrowMatch = { guildId, claimed: false };
+    if (appId) {
+      escrowMatch.appId = appId;
+    } else {
+      // Legacy: no appId field
+      escrowMatch.appId = { $exists: false };
+    }
+
     const escrowed = await PrizeEscrow.aggregate([
-      { $match: { claimed: false } },
+      { $match: escrowMatch },
       { $group: { _id: "$token", total: { $sum: { $toDouble: "$amount" } } } }
     ]);
 
@@ -96,8 +106,18 @@ router.get("/balance/:guildId/:ticker", requireGuildAccess, async (req, res) => 
     const { guildId, ticker } = req.params;
     const appId = req.query.appId || null; // Optional appId
     const out = await prizePoolService.getBalance(guildId, appId, ticker.toUpperCase());
+
+    // Build match query for escrow - filter by guildId and optionally appId
+    const escrowMatch = { guildId, claimed: false };
+    if (appId) {
+      escrowMatch.appId = appId;
+    } else {
+      // Legacy: no appId field
+      escrowMatch.appId = { $exists: false };
+    }
+
     const escrowed = await PrizeEscrow.aggregate([
-      { $match: { claimed: false } },
+      { $match: escrowMatch },
       { $group: { _id: "$token", total: { $sum: { $toDouble: "$amount" } } } }
     ]);
 
@@ -226,6 +246,7 @@ router.post("/escrow/create/:guildId", requireGuildAccess, async (req, res) => {
 
       const nftEscrow = await PrizeEscrow.create({
         guildId,
+        appId, // Include appId for multi-bot support
         discordId,
         token, // NFT collection name
         amount: "1", // NFTs are quantity 1
@@ -541,12 +562,21 @@ router.get("/nft-balances/:guildId", requireGuildAccess, async (req, res) => {
       return res.json(result);
     }
 
-    // Get escrowed NFTs for this guild
-    const escrowedNFTs = await PrizeEscrow.find({
+    // Get escrowed NFTs for this guild - filter by appId too
+    const escrowNFTMatch = {
       guildId: guildId,
       isNFT: true,
       claimed: false
-    }).select('token tokenId contractAddress nftName nftImageUrl');
+    };
+    if (appId) {
+      escrowNFTMatch.appId = appId;
+    } else {
+      // Legacy: no appId field
+      escrowNFTMatch.appId = { $exists: false };
+    }
+
+    const escrowedNFTs = await PrizeEscrow.find(escrowNFTMatch)
+      .select('token tokenId contractAddress nftName nftImageUrl');
 
     // Get all NFTs in inventory
     const inventoryNFTs = await NFTInventory.find({
