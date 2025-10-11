@@ -104,31 +104,79 @@ client.login(process.env.DISCORD_TOKEN);
 const app = express();
 app.use(express.json());
 
-// IP Whitelist Middleware - Only allow localhost (both bots on same VM)
-app.use("/api/prizepool", (req, res, next) => {
-  // Get client IP from various sources
+// API Authentication Middleware
+app.use("/api/prizepool", async (req, res, next) => {
+  // Get client IP
   const clientIP = req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.connection.remoteAddress;
 
-  // Allowed IPs: localhost only (both bots on same VM)
-  const ALLOWED_IPS = [
-    '127.0.0.1',           // IPv4 localhost
-    '::1',                 // IPv6 localhost
-    '::ffff:127.0.0.1'     // IPv4-mapped IPv6 localhost
-  ];
+  // Localhost IPs (HardcoreRumble bot on same VM) - no API key required
+  const LOCALHOST_IPS = ['127.0.0.1', '::1', '::ffff:127.0.0.1'];
+  const isLocalhost = LOCALHOST_IPS.some(ip => clientIP.includes(ip));
 
-  // Check if client IP is in whitelist
-  const isAllowed = ALLOWED_IPS.some(allowedIP => clientIP.includes(allowedIP));
+  if (isLocalhost) {
+    // Localhost requests bypass API key authentication
+    return next();
+  }
 
-  if (!isAllowed) {
-    console.warn(`🚨 BLOCKED API REQUEST from IP: ${clientIP}`);
-    return res.status(403).json({
+  // External requests require API key
+  const apiKey = req.headers['x-api-key'];
+
+  if (!apiKey) {
+    console.warn(`🚨 BLOCKED: External request from ${clientIP} - No API key provided`);
+    return res.status(401).json({
       success: false,
-      error: 'Forbidden - Unauthorized IP address'
+      error: 'Unauthorized - API key required for external access'
     });
   }
 
-  // IP is whitelisted, continue to route handler
-  next();
+  try {
+    // Import ApiKey model dynamically to avoid circular dependencies
+    const { default: ApiKey } = await import('./database/models/apiKey.js');
+    const crypto = await import('crypto');
+
+    // Hash the provided API key
+    const keyHash = crypto.default.createHash('sha256').update(apiKey).digest('hex');
+
+    // Find the API key in database
+    const apiKeyRecord = await ApiKey.findOne({ keyHash: keyHash, isActive: true });
+
+    if (!apiKeyRecord) {
+      console.warn(`🚨 BLOCKED: External request from ${clientIP} - Invalid API key`);
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized - Invalid or revoked API key'
+      });
+    }
+
+    // Extract guildId from the request (URL path or body)
+    const guildId = req.params.guildId || req.body?.guildId || req.query?.guildId;
+
+    // Validate the API key belongs to the requested guild
+    if (guildId && apiKeyRecord.guildId !== guildId) {
+      console.warn(`🚨 BLOCKED: API key from guild ${apiKeyRecord.guildId} attempted to access guild ${guildId}`);
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden - API key does not have access to this guild'
+      });
+    }
+
+    // Update last used timestamp
+    apiKeyRecord.lastUsedAt = new Date();
+    await apiKeyRecord.save();
+
+    // Attach guild info to request for downstream use
+    req.apiGuildId = apiKeyRecord.guildId;
+
+    console.log(`✅ External API request authenticated: Guild ${apiKeyRecord.guildId} from ${clientIP}`);
+    next();
+
+  } catch (error) {
+    console.error('Error validating API key:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error during authentication'
+    });
+  }
 });
 
 // Mount your API routes
