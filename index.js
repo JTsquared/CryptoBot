@@ -104,6 +104,33 @@ client.login(process.env.DISCORD_TOKEN);
 const app = express();
 app.use(express.json());
 
+// IP Whitelist Middleware - Only allow localhost (both bots on same VM)
+app.use("/api/prizepool", (req, res, next) => {
+  // Get client IP from various sources
+  const clientIP = req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.connection.remoteAddress;
+
+  // Allowed IPs: localhost only (both bots on same VM)
+  const ALLOWED_IPS = [
+    '127.0.0.1',           // IPv4 localhost
+    '::1',                 // IPv6 localhost
+    '::ffff:127.0.0.1'     // IPv4-mapped IPv6 localhost
+  ];
+
+  // Check if client IP is in whitelist
+  const isAllowed = ALLOWED_IPS.some(allowedIP => clientIP.includes(allowedIP));
+
+  if (!isAllowed) {
+    console.warn(`🚨 BLOCKED API REQUEST from IP: ${clientIP}`);
+    return res.status(403).json({
+      success: false,
+      error: 'Forbidden - Unauthorized IP address'
+    });
+  }
+
+  // IP is whitelisted, continue to route handler
+  next();
+});
+
 // Mount your API routes
 app.use("/api/prizepool", prizePoolRoutes);
 
