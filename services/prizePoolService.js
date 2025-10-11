@@ -933,12 +933,12 @@ async payout(guildId, appId = null, recipientDiscordId, toAddress, ticker, amoun
 
   // Add this method to your PrizePoolService class
 
-  async createEscrowEntries(guildId, discordId, token, amount) {
+  async createEscrowEntries(guildId, appId = null, discordId, token, amount) {
     try {
-      console.log(`Creating escrow entries - token: ${token}, amount: ${amount} (type: ${typeof amount})`);
-      
+      console.log(`🔍 [ESCROW SERVICE] Creating escrow entries - guildId: ${guildId}, appId: ${appId}, token: ${token}, amount: ${amount} (type: ${typeof amount})`);
+
       // Get current balances to resolve 'all' values
-      const balancesResult = await this.getAllBalances(guildId);
+      const balancesResult = await this.getAllBalances(guildId, appId);
       if (!balancesResult.success) {
         return { success: false, error: balancesResult.error };
       }
