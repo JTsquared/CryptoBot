@@ -813,8 +813,15 @@ async payout(guildId, appId = null, recipientDiscordId, toAddress, ticker, amoun
     return await PrizePoolWallet.findOne({ guildId });
   }
 
-  async getPendingClaims(guildId, discordId) {
-    return await PrizeEscrow.find({ guildId, discordId, claimed: false });
+  async getPendingClaims(guildId, appId = null, discordId) {
+    const query = { guildId, discordId, claimed: false };
+    if (appId) {
+      query.appId = appId;
+    } else {
+      // Legacy: no appId field
+      query.appId = { $exists: false };
+    }
+    return await PrizeEscrow.find(query);
   }
 
   async getEscrowedAmountForToken(guildId, token) {
@@ -832,7 +839,7 @@ async payout(guildId, appId = null, recipientDiscordId, toAddress, ticker, amoun
         };
       }
   
-      const pendingClaims = await this.getPendingClaims(guildId, userId);
+      const pendingClaims = await this.getPendingClaims(guildId, appId, userId);
   
       if (!pendingClaims || pendingClaims.length === 0) {
         return {
@@ -986,6 +993,7 @@ async payout(guildId, appId = null, recipientDiscordId, toAddress, ticker, amoun
   
           escrowEntries.push({
             guildId,
+            appId, // Include appId for multi-bot support
             discordId,
             token: tokenBalance.ticker,
             amount: escrowAmount
@@ -1014,6 +1022,7 @@ async payout(guildId, appId = null, recipientDiscordId, toAddress, ticker, amoun
   
         escrowEntries.push({
           guildId,
+          appId, // Include appId for multi-bot support
           discordId,
           token: token,
           amount: escrowAmount
