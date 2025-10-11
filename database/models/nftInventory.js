@@ -10,7 +10,7 @@ const NFTInventorySchema = new mongoose.Schema({
   imageUrl: { type: String },
   addedAt: { type: Date, default: Date.now },
   addedBy: { type: String }, // Discord ID of donor
-});
+}, { suppressReservedKeysWarning: true });
 
 // Compound index to ensure we don't add the same NFT twice
 NFTInventorySchema.index({ guildId: 1, collection: 1, tokenId: 1 }, { unique: true });

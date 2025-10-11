@@ -1,12 +1,13 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import ApiKey from '../database/models/apiKey.js';
 import crypto from 'crypto';
 
 export default {
-  hidden: true,
   data: new SlashCommandBuilder()
     .setName('generate-api-key')
-    .setDescription('Generate an API key for external access to your prize pool (admin only)')
+    .setDescription('Generate an API key for external access to your prize pool')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDMPermission(false)
     .addStringOption(option =>
       option.setName('name')
         .setDescription('A name to identify this API key')
@@ -14,13 +15,6 @@ export default {
     ),
 
   async execute(interaction) {
-    // Check if user has admin permissions
-    if (!interaction.member.permissions.has('ManageGuild')) {
-      return interaction.reply({
-        content: '❌ You do not have permission to use this command.',
-        ephemeral: true
-      });
-    }
 
     await interaction.deferReply({ ephemeral: true });
 

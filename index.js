@@ -49,15 +49,22 @@ for (const file of commandFiles) {
 
 client.once("ready", async () => {
   console.log(`Logged in as ${client.user.tag}`);
-  await mongoose.connect(process.env.MONGO_URI);
-  console.log("Connected to MongoDB");
+
+  // Try to connect to MongoDB (with error handling for local dev)
+  try {
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log("Connected to MongoDB");
+  } catch (error) {
+    console.error("⚠️  MongoDB connection failed:", error.message);
+    console.error("Bot will continue without database (commands that need DB will fail)");
+  }
 
   const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
-  await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
-  // await rest.put(
-  //   Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID),
-  //   { body: commands }
-  // );
+  // await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+  await rest.put(
+    Routes.applicationGuildCommands(client.user.id, process.env.GUILD_ID),
+    { body: commands }
+  );
   // console.log("Slash commands registered.");
 
   const hiddenCommands = [];
@@ -148,26 +155,16 @@ app.use("/api/prizepool", async (req, res, next) => {
       });
     }
 
-    // Extract guildId from the request (URL path or body)
-    const guildId = req.params.guildId || req.body?.guildId || req.query?.guildId;
-
-    // Validate the API key belongs to the requested guild
-    if (guildId && apiKeyRecord.guildId !== guildId) {
-      console.warn(`🚨 BLOCKED: API key from guild ${apiKeyRecord.guildId} attempted to access guild ${guildId}`);
-      return res.status(403).json({
-        success: false,
-        error: 'Forbidden - API key does not have access to this guild'
-      });
-    }
+    // Store the authenticated API key's guild ID in the request
+    // Routes MUST validate this matches the requested guildId
+    req.apiGuildId = apiKeyRecord.guildId;
+    req.isExternalRequest = true; // Flag to indicate this came from external API key
 
     // Update last used timestamp
     apiKeyRecord.lastUsedAt = new Date();
     await apiKeyRecord.save();
 
-    // Attach guild info to request for downstream use
-    req.apiGuildId = apiKeyRecord.guildId;
-
-    console.log(`✅ External API request authenticated: Guild ${apiKeyRecord.guildId} from ${clientIP}`);
+    console.log(`✅ API key authenticated for guild ${apiKeyRecord.guildId} from ${clientIP}`);
     next();
 
   } catch (error) {

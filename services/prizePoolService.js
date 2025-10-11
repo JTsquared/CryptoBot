@@ -15,9 +15,19 @@ export class PrizePoolService {
     this.provider = provider;
   }
 
-  async getOrCreateWallet(guildId) {
-    let existing = await PrizePoolWallet.findOne({ guildId });
-  
+  async getOrCreateWallet(guildId, appId = null) {
+    // Check if wallet already exists (with or without appId)
+    let existing;
+    if (appId) {
+      existing = await PrizePoolWallet.findOne({ guildId, appId });
+    } else {
+      // Legacy: Find wallet without appId field
+      existing = await PrizePoolWallet.findOne({
+        guildId,
+        appId: { $exists: false }
+      });
+    }
+
     if (existing) {
       return {
         success: false,
@@ -25,18 +35,35 @@ export class PrizePoolService {
         wallet: existing
       };
     }
-  
+
     const { address, pk } = generateWallet();
-    const newWallet = await PrizePoolWallet.create({
+    const walletData = {
       guildId,
       address,
       privateKey: await encrypt(pk)
-    });
+    };
+
+    // Only add appId if provided (allows creating legacy wallets)
+    if (appId) {
+      walletData.appId = appId;
+    }
+
+    const newWallet = await PrizePoolWallet.create(walletData);
     return { success: true, wallet: newWallet };
   }
 
-  async getPrizePoolWallet(guildId) {
-    return PrizePoolWallet.findOne({ guildId });
+  async getPrizePoolWallet(guildId, appId = null) {
+    // Smart fallback: Try with appId first, then without (legacy)
+    if (appId) {
+      const wallet = await PrizePoolWallet.findOne({ guildId, appId });
+      if (wallet) return wallet;
+    }
+
+    // Fall back to legacy wallet (no appId field) for backwards compatibility
+    return await PrizePoolWallet.findOne({
+      guildId,
+      appId: { $exists: false }
+    });
   }
   
   async _getTokenBalanceByAddress(address, ticker) {
@@ -77,8 +104,8 @@ export class PrizePoolService {
    * Get balance for a single token (by ticker) for a guild prize-pool wallet.
    * Returns { success, address, balance } or { success:false, error }
    */
-  async getBalance(guildId, ticker) {
-    const wallet = await this.getPrizePoolWallet(guildId);
+  async getBalance(guildId, appId = null, ticker) {
+    const wallet = await this.getPrizePoolWallet(guildId, appId);
     if (!wallet) return { success: false, error: "NO_WALLET" };
 
     try {
@@ -107,9 +134,9 @@ export class PrizePoolService {
    *
    * Returns { success, address, balances: [{ ticker, formatted, raw, decimals, hasBalance }] }
    */
-  async getAllBalances(guildId, { includeZeros = false } = {}) {
+  async getAllBalances(guildId, appId = null, { includeZeros = false } = {}) {
     const TOKEN_MAP = getTokenMap();
-    const wallet = await this.getPrizePoolWallet(guildId);
+    const wallet = await this.getPrizePoolWallet(guildId, appId);
     if (!wallet) {
       return { success: false, error: "NO_WALLET" };
     }
@@ -159,9 +186,9 @@ export class PrizePoolService {
   //   }
   // }
 
-  async donateToPool(guildId, senderDiscordId, amount, ticker) {
+  async donateToPool(guildId, appId = null, senderDiscordId, amount, ticker) {
     const TOKEN_MAP = getTokenMap();
-    const poolWallet = await this.getPrizePoolWallet(guildId);
+    const poolWallet = await this.getPrizePoolWallet(guildId, appId);
     if (!poolWallet) {
       return { success: false, error: "NO_WALLET" };
     }
@@ -351,9 +378,9 @@ console.log("Using TOKEN_MAP for DISH:", TOKEN_MAP["DISH"]);
   }
 
 // Fixed payout method with escrow claim support
-async payout(guildId, recipientDiscordId, toAddress, ticker, amount = "all", isEscrowClaim = false) {
+async payout(guildId, appId = null, recipientDiscordId, toAddress, ticker, amount = "all", isEscrowClaim = false) {
   const TOKEN_MAP = getTokenMap();
-  const poolWallet = await this.getPrizePoolWallet(guildId);
+  const poolWallet = await this.getPrizePoolWallet(guildId, appId);
   if (!poolWallet) {
     return { success: false, error: "NO_WALLET" };
   }
@@ -795,7 +822,7 @@ async payout(guildId, recipientDiscordId, toAddress, ticker, amount = "all", isE
     return pending.reduce((sum, esc) => sum + BigInt(esc.amount), 0n);
   }
 
-  async claimEscrow(guildId, userId) {
+  async claimEscrow(guildId, appId = null, userId) {
     try {
       const wallet = await Wallet.findOne({ discordId: userId });
       if (!wallet) {
@@ -826,6 +853,7 @@ async payout(guildId, recipientDiscordId, toAddress, ticker, amount = "all", isE
             // Use NFT payout for NFT escrows
             payoutResult = await this.payoutNFT(
               entry.guildId,
+              appId, // Pass through appId for wallet lookup
               entry.discordId,
               wallet.address,
               entry.token, // collection
@@ -847,6 +875,7 @@ async payout(guildId, recipientDiscordId, toAddress, ticker, amount = "all", isE
             // Pass isEscrowClaim = true to skip reserved balance calculations
             payoutResult = await this.payout(
               entry.guildId,
+              appId, // Pass through appId for wallet lookup
               entry.discordId,
               wallet.address,
               entry.token,
@@ -1062,9 +1091,9 @@ async payout(guildId, recipientDiscordId, toAddress, ticker, amount = "all", isE
    * Donate NFT from user wallet to prize pool wallet
    * Handles approval automatically
    */
-  async donateNFT(guildId, senderDiscordId, collection, tokenId) {
+  async donateNFT(guildId, appId = null, senderDiscordId, collection, tokenId) {
     const NFT_MAP = getNFTMap();
-    const poolWallet = await this.getPrizePoolWallet(guildId);
+    const poolWallet = await this.getPrizePoolWallet(guildId, appId);
     if (!poolWallet) {
       return { success: false, error: "NO_WALLET" };
     }
@@ -1157,9 +1186,9 @@ async payout(guildId, recipientDiscordId, toAddress, ticker, amount = "all", isE
   /**
    * Payout NFT from prize pool to recipient
    */
-  async payoutNFT(guildId, recipientDiscordId, toAddress, collection, tokenId) {
+  async payoutNFT(guildId, appId = null, recipientDiscordId, toAddress, collection, tokenId) {
     const NFT_MAP = getNFTMap();
-    const poolWallet = await this.getPrizePoolWallet(guildId);
+    const poolWallet = await this.getPrizePoolWallet(guildId, appId);
     if (!poolWallet) {
       return { success: false, error: "NO_WALLET" };
     }
@@ -1283,11 +1312,11 @@ async payout(guildId, recipientDiscordId, toAddress, ticker, amount = "all", isE
   /**
    * Withdraw NFT from prize pool with 0.02 AVAX flat fee
    */
-  async withdrawNFT(senderDiscordId, toAddress, collection, tokenId, guildId) {
+  async withdrawNFT(senderDiscordId, toAddress, collection, tokenId, guildId, appId = null) {
     const WITHDRAWAL_FEE = "0.02"; // 0.02 AVAX flat fee
     const NFT_MAP = getNFTMap();
 
-    const poolWallet = await this.getPrizePoolWallet(guildId);
+    const poolWallet = await this.getPrizePoolWallet(guildId, appId);
     if (!poolWallet) {
       return { success: false, error: "NO_WALLET" };
     }

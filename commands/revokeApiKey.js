@@ -1,11 +1,12 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import ApiKey from '../database/models/apiKey.js';
 
 export default {
-  hidden: true,
   data: new SlashCommandBuilder()
     .setName('revoke-api-key')
-    .setDescription('Revoke an API key (admin only)')
+    .setDescription('Revoke an API key')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDMPermission(false)
     .addStringOption(option =>
       option.setName('key-hash')
         .setDescription('First 16 characters of the key hash (from /list-api-keys)')
@@ -13,13 +14,6 @@ export default {
     ),
 
   async execute(interaction) {
-    // Check if user has admin permissions
-    if (!interaction.member.permissions.has('ManageGuild')) {
-      return interaction.reply({
-        content: '❌ You do not have permission to use this command.',
-        ephemeral: true
-      });
-    }
 
     await interaction.deferReply({ ephemeral: true });
 

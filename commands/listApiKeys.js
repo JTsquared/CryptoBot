@@ -1,20 +1,14 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import ApiKey from '../database/models/apiKey.js';
 
 export default {
-  hidden: true,
   data: new SlashCommandBuilder()
     .setName('list-api-keys')
-    .setDescription('List all API keys for this server (admin only)'),
+    .setDescription('List all API keys for this server')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDMPermission(false),
 
   async execute(interaction) {
-    // Check if user has admin permissions
-    if (!interaction.member.permissions.has('ManageGuild')) {
-      return interaction.reply({
-        content: '❌ You do not have permission to use this command.',
-        ephemeral: true
-      });
-    }
 
     await interaction.deferReply({ ephemeral: true });
 

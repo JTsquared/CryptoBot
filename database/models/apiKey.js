@@ -15,8 +15,7 @@ const ApiKeySchema = new mongoose.Schema({
   }
 });
 
-// Index for fast lookups by hash
-ApiKeySchema.index({ keyHash: 1 });
+// Index is already created via unique: true in schema, no need to duplicate
 
 const ApiKey = mongoose.model('ApiKey', ApiKeySchema);
 export default ApiKey;
