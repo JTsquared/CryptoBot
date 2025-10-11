@@ -22,6 +22,7 @@ import PrizeEscrow from "../database/models/prizeEscrow.js";
 import NFTInventory from "../database/models/nftInventory.js";
 import { ethers } from "ethers";
 import Wallet from "../database/models/wallet.js";
+import { requireGuildAccess } from "../middleware/validateGuildAccess.js";
 
 const router = express.Router();
 const provider = new ethers.JsonRpcProvider(process.env.AVALANCHE_RPC);
@@ -30,10 +31,11 @@ console.log("AVALANCHE_RPC from env:", process.env.AVALANCHE_RPC);
 const prizePoolService = new PrizePoolService(provider);
 
 //create wallet
-router.post("/create/:guildId", async (req, res) => {
+router.post("/create/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
-    const result = await prizePoolService.getOrCreateWallet(guildId);
+    const appId = req.query.appId || req.body?.appId || null; // Optional appId
+    const result = await prizePoolService.getOrCreateWallet(guildId, appId);
 
     if (!result.success) {
       if (result.error === "WALLET_ALREADY_EXISTS") {
@@ -50,12 +52,13 @@ router.post("/create/:guildId", async (req, res) => {
 });
 
 // GET /api/prizepool/balances/:guildId?includeZeros=true|false
-router.get("/balances/:guildId", async (req, res) => {
+router.get("/balances/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
+    const appId = req.query.appId || null; // Optional appId
     const includeZeros = String(req.query.includeZeros || "false") === "true";
 
-    const out = await prizePoolService.getAllBalances(guildId, { includeZeros });
+    const out = await prizePoolService.getAllBalances(guildId, appId, { includeZeros });
     const escrowed = await PrizeEscrow.aggregate([
       { $match: { claimed: false } },
       { $group: { _id: "$token", total: { $sum: { $toDouble: "$amount" } } } }
@@ -88,10 +91,11 @@ router.get("/balances/:guildId", async (req, res) => {
 });
 
 // Optional: GET /api/prizepool/balance/:guildId/:ticker  (single token)
-router.get("/balance/:guildId/:ticker", async (req, res) => {
+router.get("/balance/:guildId/:ticker", requireGuildAccess, async (req, res) => {
   try {
     const { guildId, ticker } = req.params;
-    const out = await prizePoolService.getBalance(guildId, ticker.toUpperCase());
+    const appId = req.query.appId || null; // Optional appId
+    const out = await prizePoolService.getBalance(guildId, appId, ticker.toUpperCase());
     const escrowed = await PrizeEscrow.aggregate([
       { $match: { claimed: false } },
       { $group: { _id: "$token", total: { $sum: { $toDouble: "$amount" } } } }
@@ -117,16 +121,17 @@ router.get("/balance/:guildId/:ticker", async (req, res) => {
 });
 
 // POST /api/prizepool/donate/:guildId
-router.post("/donate/:guildId", async (req, res) => {
+router.post("/donate/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
+    const appId = req.query.appId || req.body?.appId || null; // Optional appId
     const { senderDiscordId, amount, ticker } = req.body;
 
     if (!senderDiscordId || !amount || !ticker) {
       return res.status(400).json({ success: false, error: "MISSING_PARAMS" });
     }
 
-    const out = await prizePoolService.donateToPool(guildId, senderDiscordId, amount, ticker);
+    const out = await prizePoolService.donateToPool(guildId, appId, senderDiscordId, amount, ticker);
 
     if (!out.success) {
       if (out.error === "NO_WALLET") return res.status(404).json(out);
@@ -143,9 +148,10 @@ router.post("/donate/:guildId", async (req, res) => {
 });
 
 // POST /api/prizepool/payout/:guildId
-router.post("/payout/:guildId", async (req, res) => {
+router.post("/payout/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
+    const appId = req.query.appId || req.body?.appId || null; // Optional appId
     let { toAddress, recipientDiscordId, ticker, amount } = req.body;
 
     // If Discord ID is provided, resolve it to a wallet address
@@ -161,7 +167,7 @@ router.post("/payout/:guildId", async (req, res) => {
       return res.status(400).json({ success: false, error: "NO_ADDRESS_PROVIDED" });
     }
 
-    const out = await prizePoolService.payout(guildId, recipientDiscordId, toAddress, ticker, amount);
+    const out = await prizePoolService.payout(guildId, appId, recipientDiscordId, toAddress, ticker, amount);
 
     if (!out.success) {
       if (out.error === "NO_WALLET") return res.status(404).json(out);
@@ -179,18 +185,19 @@ router.post("/payout/:guildId", async (req, res) => {
 });
 
 //POST /api/prizepool/escrow/claim/:guildId
-router.post("/escrow/claim/:guildId", async (req, res) => {
+router.post("/escrow/claim/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
+    const appId = req.query.appId || req.body?.appId || null; // Optional appId
     const { discordId } = req.body;
 
-    console.log("Claiming escrow for guildId:", guildId, "discordId:", discordId);
+    console.log("Claiming escrow for guildId:", guildId, "appId:", appId, "discordId:", discordId);
 
     if (!discordId) {
       return res.status(400).json({ success: false, error: "Missing discordId" });
     }
 
-    const result = await prizePoolService.claimEscrow(guildId, discordId);
+    const result = await prizePoolService.claimEscrow(guildId, appId, discordId);
     console.log("Escrow claim result:", result);
 
     if (!result.success) {
@@ -204,7 +211,7 @@ router.post("/escrow/claim/:guildId", async (req, res) => {
   }
 });
 
-router.post("/escrow/create/:guildId", async (req, res) => {
+router.post("/escrow/create/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
     const { discordId, token, amount, isNFT, contractAddress, tokenId, nftName, nftImageUrl } = req.body;
@@ -270,7 +277,7 @@ router.post("/escrow/create/:guildId", async (req, res) => {
 });
 
 // POST /api/prizepool/developer-payment/:guildId
-router.post("/developer-payment/:guildId", async (req, res) => {
+router.post("/developer-payment/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
     const { senderDiscordId, amount, ticker } = req.body;
@@ -318,16 +325,17 @@ router.post("/developer-payment/:guildId", async (req, res) => {
 // =====================
 
 // POST /api/prizepool/donate-nft/:guildId
-router.post("/donate-nft/:guildId", async (req, res) => {
+router.post("/donate-nft/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
+    const appId = req.query.appId || req.body?.appId || null; // Optional appId
     const { senderDiscordId, collection, tokenId } = req.body;
 
     if (!senderDiscordId || !collection || !tokenId) {
       return res.status(400).json({ success: false, error: "MISSING_PARAMS" });
     }
 
-    const result = await prizePoolService.donateNFT(guildId, senderDiscordId, collection, tokenId);
+    const result = await prizePoolService.donateNFT(guildId, appId, senderDiscordId, collection, tokenId);
 
     if (!result.success) {
       if (result.error === "NO_WALLET") return res.status(404).json(result);
@@ -371,9 +379,10 @@ router.post("/donate-nft/:guildId", async (req, res) => {
 });
 
 // POST /api/prizepool/payout-nft/:guildId
-router.post("/payout-nft/:guildId", async (req, res) => {
+router.post("/payout-nft/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
+    const appId = req.query.appId || req.body?.appId || null; // Optional appId
     let { toAddress, recipientDiscordId, collection, tokenId } = req.body;
 
     // If Discord ID is provided, resolve it to a wallet address
@@ -389,7 +398,7 @@ router.post("/payout-nft/:guildId", async (req, res) => {
       return res.status(400).json({ success: false, error: "MISSING_PARAMS" });
     }
 
-    const result = await prizePoolService.payoutNFT(guildId, recipientDiscordId, toAddress, collection, tokenId);
+    const result = await prizePoolService.payoutNFT(guildId, appId, recipientDiscordId, toAddress, collection, tokenId);
 
     if (!result.success) {
       if (result.error === "NO_WALLET") return res.status(404).json(result);
@@ -426,9 +435,10 @@ router.post("/payout-nft/:guildId", async (req, res) => {
 });
 
 // POST /api/prizepool/withdraw-nft/:guildId
-router.post("/withdraw-nft/:guildId", async (req, res) => {
+router.post("/withdraw-nft/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
+    const appId = req.query.appId || req.body?.appId || null; // Optional appId
     let { toAddress, senderDiscordId, collection, tokenId } = req.body;
 
     if (!senderDiscordId || !collection || !tokenId) {
@@ -444,7 +454,7 @@ router.post("/withdraw-nft/:guildId", async (req, res) => {
       toAddress = walletDoc.address;
     }
 
-    const result = await prizePoolService.withdrawNFT(senderDiscordId, toAddress, collection, tokenId, guildId);
+    const result = await prizePoolService.withdrawNFT(senderDiscordId, toAddress, collection, tokenId, guildId, appId);
 
     if (!result.success) {
       if (result.error === "NO_WALLET") return res.status(404).json(result);
@@ -466,16 +476,17 @@ router.post("/withdraw-nft/:guildId", async (req, res) => {
 });
 
 // POST /api/prizepool/verify-nft/:guildId
-router.post("/verify-nft/:guildId", async (req, res) => {
+router.post("/verify-nft/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
+    const appId = req.query.appId || req.body?.appId || null; // Optional appId
     const { collection, tokenId } = req.body;
 
     if (!collection || !tokenId) {
       return res.status(400).json({ success: false, error: "MISSING_PARAMS" });
     }
 
-    const poolWallet = await prizePoolService.getPrizePoolWallet(guildId);
+    const poolWallet = await prizePoolService.getPrizePoolWallet(guildId, appId);
     if (!poolWallet) {
       return res.status(404).json({ success: false, error: "NO_WALLET" });
     }
@@ -512,11 +523,12 @@ router.post("/verify-nft/:guildId", async (req, res) => {
 });
 
 // GET /api/prizepool/nft-balances/:guildId
-router.get("/nft-balances/:guildId", async (req, res) => {
+router.get("/nft-balances/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
+    const appId = req.query.appId || null; // Optional appId
 
-    const poolWallet = await prizePoolService.getPrizePoolWallet(guildId);
+    const poolWallet = await prizePoolService.getPrizePoolWallet(guildId, appId);
     if (!poolWallet) {
       return res.status(404).json({ success: false, error: "NO_WALLET" });
     }
