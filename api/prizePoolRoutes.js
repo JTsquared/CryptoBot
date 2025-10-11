@@ -214,8 +214,9 @@ router.post("/escrow/claim/:guildId", requireGuildAccess, async (req, res) => {
 router.post("/escrow/create/:guildId", requireGuildAccess, async (req, res) => {
   try {
     const { guildId } = req.params;
+    const appId = req.query.appId || req.body?.appId || null; // Optional appId
     const { discordId, token, amount, isNFT, contractAddress, tokenId, nftName, nftImageUrl } = req.body;
-    console.log("Creating escrow entry for guildId:", guildId, "discordId:", discordId, "token:", token, "amount:", amount, "isNFT:", isNFT);
+    console.log("🔍 [ESCROW] Creating escrow entry for guildId:", guildId, "appId:", appId, "discordId:", discordId, "token:", token, "amount:", amount, "isNFT:", isNFT);
 
     // For NFTs, create escrow directly with NFT fields
     if (isNFT) {
@@ -249,11 +250,11 @@ router.post("/escrow/create/:guildId", requireGuildAccess, async (req, res) => {
       return res.status(400).json({ success: false, error: "MISSING_FIELDS" });
     }
 
-    console.log("Received escrow creation request:", { guildId, discordId, token, amount });
+    console.log("Received escrow creation request:", { guildId, appId, discordId, token, amount });
     // Use the service method to handle 'all' scenarios
-    const result = await prizePoolService.createEscrowEntries(guildId, discordId, token, amount);
+    const result = await prizePoolService.createEscrowEntries(guildId, appId, discordId, token, amount);
 
-    console.log("Escrow creation result:", result);
+    console.log("🔍 [ESCROW] Escrow creation result:", result);
 
     if (!result.success) {
       let statusCode = 500;
