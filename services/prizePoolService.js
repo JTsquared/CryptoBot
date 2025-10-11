@@ -53,25 +53,17 @@ export class PrizePoolService {
   }
 
   async getPrizePoolWallet(guildId, appId = null) {
-    console.log(`🔍 [DEBUG] getPrizePoolWallet - guildId: ${guildId}, appId: ${appId}`);
-
     // Smart fallback: Try with appId first, then without (legacy)
     if (appId) {
       const wallet = await PrizePoolWallet.findOne({ guildId, appId });
-      console.log(`🔍 [DEBUG] Wallet lookup with appId - found: ${!!wallet}`);
-      if (wallet) {
-        console.log(`🔍 [DEBUG] Wallet found: { guildId: ${wallet.guildId}, appId: ${wallet.appId}, address: ${wallet.address} }`);
-        return wallet;
-      }
+      if (wallet) return wallet;
     }
 
     // Fall back to legacy wallet (no appId field) for backwards compatibility
-    const legacyWallet = await PrizePoolWallet.findOne({
+    return await PrizePoolWallet.findOne({
       guildId,
       appId: { $exists: false }
     });
-    console.log(`🔍 [DEBUG] Legacy wallet lookup - found: ${!!legacyWallet}`);
-    return legacyWallet;
   }
   
   async _getTokenBalanceByAddress(address, ticker) {
