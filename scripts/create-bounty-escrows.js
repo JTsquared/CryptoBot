@@ -4,7 +4,7 @@
  * One-time script to create escrow entries for unpaid bounties
  *
  * Usage:
- *   node scripts/create-bounty-escrows.js [--dry-run]
+ *   node scripts/create-bounty-escrows.js [--env=prod] [--dry-run]
  */
 
 import dotenv from 'dotenv';
@@ -16,8 +16,20 @@ import { dirname, join } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Parse env file argument
+let envFile = ".env";
+const envArg = process.argv.find(arg => arg.startsWith("--env="));
+if (envArg) {
+  const file = envArg.split("=")[1];
+  if (file === "test") envFile = ".env.test";
+  else if (file === "prod") envFile = ".env.prod";
+  else envFile = ".env"; // fallback
+}
+
+console.log(`Loading env file: ${envFile}`);
+
 // Load environment
-dotenv.config({ path: join(__dirname, '../.env') });
+dotenv.config({ path: join(__dirname, '..', envFile) });
 
 // Parse command line arguments
 const args = process.argv.slice(2);
