@@ -71,3 +71,23 @@ export function requireGuildAccess(req, res, next) {
   // Guild matches, allow access
   next();
 }
+
+/**
+ * REQUIRES appId to be present in request
+ * appId is the Discord bot's Application ID - required for multi-bot support
+ */
+export function requireAppId(req, res, next) {
+  const appId = req.query.appId || req.body?.appId;
+
+  if (!appId) {
+    console.warn('🚨 BLOCKED: Request missing required appId parameter');
+    return res.status(400).json({
+      success: false,
+      error: 'Bad Request - appId is required (Discord bot Application ID)'
+    });
+  }
+
+  // Store appId for use in route handlers
+  req.appId = appId;
+  next();
+}
