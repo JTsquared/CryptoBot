@@ -11,7 +11,14 @@ export default {
   async execute(interaction) {
     await interaction.deferReply({ flags: 64 }); // Ephemeral
 
-    const walletDoc = await Wallet.findOne({ discordId: interaction.user.id });
+    let walletDoc;
+    try {
+      walletDoc = await Wallet.findOne({ discordId: interaction.user.id }).maxTimeMS(5000);
+    } catch (dbError) {
+      console.error("Database query error:", dbError);
+      return interaction.editReply("❌ Database connection issue. Please try again later.");
+    }
+
     if (!walletDoc) {
       return interaction.editReply("You don't have a wallet yet. Use `/createwallet`.");
     }

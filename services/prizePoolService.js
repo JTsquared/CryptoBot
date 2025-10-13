@@ -1319,20 +1319,18 @@ async payout(guildId, appId = null, recipientDiscordId, toAddress, ticker, amoun
   }
 
   /**
-   * Withdraw NFT from prize pool with 0.02 AVAX flat fee
+   * Withdraw NFT from prize pool (used by bounty/escrow systems)
+   * NO FEE - this is for withdrawing NFTs that were won/donated to prize pool
+   *
+   * Note: This is NOT for personal wallet → external wallet transfers
+   * (that would be a separate feature with 0.02 AVAX fee)
    */
-  async withdrawNFT(senderDiscordId, toAddress, collection, tokenId, guildId, appId = null) {
-    const WITHDRAWAL_FEE = "0.02"; // 0.02 AVAX flat fee
+  async withdrawNFTFromPrizePool(senderDiscordId, toAddress, collection, tokenId, guildId, appId = null) {
     const NFT_MAP = getNFTMap();
 
     const poolWallet = await this.getPrizePoolWallet(guildId, appId);
     if (!poolWallet) {
       return { success: false, error: "NO_WALLET" };
-    }
-
-    const senderWalletDoc = await Wallet.findOne({ discordId: senderDiscordId });
-    if (!senderWalletDoc) {
-      return { success: false, error: "NO_SENDER_WALLET" };
     }
 
     const nftInfo = NFT_MAP[collection];
@@ -1342,37 +1340,6 @@ async payout(guildId, appId = null, recipientDiscordId, toAddress, ticker, amoun
 
     try {
       const provider = this.provider;
-
-      // Step 1: Charge withdrawal fee
-      const decryptedSenderKey = await decrypt(senderWalletDoc.privateKey);
-      const senderSigner = new ethers.Wallet(decryptedSenderKey, provider);
-
-      const feeWei = ethers.parseEther(WITHDRAWAL_FEE);
-      const feeData = await provider.getFeeData();
-      if (!feeData.gasPrice) return { success: false, error: "NETWORK_ERROR" };
-
-      const feeGasEstimate = await provider.estimateGas({
-        to: poolWallet.address,
-        value: feeWei,
-        from: senderWalletDoc.address
-      });
-
-      const feeGasCost = feeGasEstimate * feeData.gasPrice;
-      const senderBalance = await provider.getBalance(senderWalletDoc.address);
-      if (senderBalance < feeWei + feeGasCost) {
-        return { success: false, error: "INSUFFICIENT_FUNDS_FOR_FEE" };
-      }
-
-      const feeTx = await senderSigner.sendTransaction({
-        to: poolWallet.address,
-        value: feeWei,
-        gasPrice: feeData.gasPrice,
-        gasLimit: feeGasEstimate
-      });
-      await feeTx.wait();
-      console.log(`Withdrawal fee paid: ${WITHDRAWAL_FEE} AVAX - TX: ${feeTx.hash}`);
-
-      // Step 2: Transfer NFT from pool to user's specified address
       const decryptedPoolKey = await decrypt(poolWallet.privateKey);
       const poolSigner = new ethers.Wallet(decryptedPoolKey, provider);
 
@@ -1383,6 +1350,9 @@ async payout(guildId, appId = null, recipientDiscordId, toAddress, ticker, amoun
       if (owner.toLowerCase() !== poolWallet.address.toLowerCase()) {
         return { success: false, error: "POOL_NOT_OWNER" };
       }
+
+      const feeData = await provider.getFeeData();
+      if (!feeData.gasPrice) return { success: false, error: "NETWORK_ERROR" };
 
       const transferGasEstimate = await nftContract.transferFrom.estimateGas(
         poolWallet.address,
@@ -1408,20 +1378,26 @@ async payout(guildId, appId = null, recipientDiscordId, toAddress, ticker, amoun
 
       await transferTx.wait();
 
-      console.log(`✅ NFT withdrawn: ${collection} #${tokenId} to ${toAddress} - TX: ${transferTx.hash}`);
+      console.log(`✅ NFT withdrawn from prize pool: ${collection} #${tokenId} to ${toAddress} - TX: ${transferTx.hash}`);
 
       return {
         success: true,
-        feeTxHash: feeTx.hash,
-        transferTxHash: transferTx.hash,
+        txHash: transferTx.hash,
         collection,
         tokenId,
-        withdrawalFee: WITHDRAWAL_FEE,
         recipientAddress: toAddress
       };
     } catch (err) {
-      console.error('withdrawNFT error:', err);
+      console.error('withdrawNFTFromPrizePool error:', err);
       return { success: false, error: "TX_FAILED", detail: err.message };
     }
+  }
+
+  /**
+   * DEPRECATED: Use withdrawNFTFromPrizePool instead
+   * Keeping for backwards compatibility
+   */
+  async withdrawNFT(senderDiscordId, toAddress, collection, tokenId, guildId, appId = null) {
+    return this.withdrawNFTFromPrizePool(senderDiscordId, toAddress, collection, tokenId, guildId, appId);
   }
 }

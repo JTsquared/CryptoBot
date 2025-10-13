@@ -22,7 +22,7 @@ import PrizeEscrow from "../database/models/prizeEscrow.js";
 import NFTInventory from "../database/models/nftInventory.js";
 import { ethers } from "ethers";
 import Wallet from "../database/models/wallet.js";
-import { requireGuildAccess } from "../middleware/validateGuildAccess.js";
+import { requireGuildAccess, requireAppId } from "../middleware/validateGuildAccess.js";
 
 const router = express.Router();
 const provider = new ethers.JsonRpcProvider(process.env.AVALANCHE_RPC);
@@ -31,7 +31,7 @@ console.log("AVALANCHE_RPC from env:", process.env.AVALANCHE_RPC);
 const prizePoolService = new PrizePoolService(provider);
 
 //create wallet
-router.post("/create/:guildId", requireGuildAccess, async (req, res) => {
+router.post("/create/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId } = req.params;
     const appId = req.query.appId || req.body?.appId || null; // Optional appId
@@ -52,7 +52,7 @@ router.post("/create/:guildId", requireGuildAccess, async (req, res) => {
 });
 
 // GET /api/prizepool/balances/:guildId?includeZeros=true|false
-router.get("/balances/:guildId", requireGuildAccess, async (req, res) => {
+router.get("/balances/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId } = req.params;
     const appId = req.query.appId || null; // Optional appId
@@ -101,7 +101,7 @@ router.get("/balances/:guildId", requireGuildAccess, async (req, res) => {
 });
 
 // Optional: GET /api/prizepool/balance/:guildId/:ticker  (single token)
-router.get("/balance/:guildId/:ticker", requireGuildAccess, async (req, res) => {
+router.get("/balance/:guildId/:ticker", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId, ticker } = req.params;
     const appId = req.query.appId || null; // Optional appId
@@ -141,7 +141,7 @@ router.get("/balance/:guildId/:ticker", requireGuildAccess, async (req, res) => 
 });
 
 // POST /api/prizepool/donate/:guildId
-router.post("/donate/:guildId", requireGuildAccess, async (req, res) => {
+router.post("/donate/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId } = req.params;
     const appId = req.query.appId || req.body?.appId || null; // Optional appId
@@ -168,7 +168,7 @@ router.post("/donate/:guildId", requireGuildAccess, async (req, res) => {
 });
 
 // POST /api/prizepool/payout/:guildId
-router.post("/payout/:guildId", requireGuildAccess, async (req, res) => {
+router.post("/payout/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId } = req.params;
     const appId = req.query.appId || req.body?.appId || null; // Optional appId
@@ -205,7 +205,7 @@ router.post("/payout/:guildId", requireGuildAccess, async (req, res) => {
 });
 
 //POST /api/prizepool/escrow/claim/:guildId
-router.post("/escrow/claim/:guildId", requireGuildAccess, async (req, res) => {
+router.post("/escrow/claim/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId } = req.params;
     const appId = req.query.appId || req.body?.appId || null; // Optional appId
@@ -231,7 +231,7 @@ router.post("/escrow/claim/:guildId", requireGuildAccess, async (req, res) => {
   }
 });
 
-router.post("/escrow/create/:guildId", requireGuildAccess, async (req, res) => {
+router.post("/escrow/create/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId } = req.params;
     const appId = req.query.appId || req.body?.appId || null; // Optional appId
@@ -299,7 +299,7 @@ router.post("/escrow/create/:guildId", requireGuildAccess, async (req, res) => {
 });
 
 // POST /api/prizepool/developer-payment/:guildId
-router.post("/developer-payment/:guildId", requireGuildAccess, async (req, res) => {
+router.post("/developer-payment/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId } = req.params;
     const { senderDiscordId, amount, ticker } = req.body;
@@ -347,7 +347,7 @@ router.post("/developer-payment/:guildId", requireGuildAccess, async (req, res) 
 // =====================
 
 // POST /api/prizepool/donate-nft/:guildId
-router.post("/donate-nft/:guildId", requireGuildAccess, async (req, res) => {
+router.post("/donate-nft/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId } = req.params;
     const appId = req.query.appId || req.body?.appId || null; // Optional appId
@@ -401,7 +401,7 @@ router.post("/donate-nft/:guildId", requireGuildAccess, async (req, res) => {
 });
 
 // POST /api/prizepool/payout-nft/:guildId
-router.post("/payout-nft/:guildId", requireGuildAccess, async (req, res) => {
+router.post("/payout-nft/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId } = req.params;
     const appId = req.query.appId || req.body?.appId || null; // Optional appId
@@ -457,7 +457,7 @@ router.post("/payout-nft/:guildId", requireGuildAccess, async (req, res) => {
 });
 
 // POST /api/prizepool/withdraw-nft/:guildId
-router.post("/withdraw-nft/:guildId", requireGuildAccess, async (req, res) => {
+router.post("/withdraw-nft/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId } = req.params;
     const appId = req.query.appId || req.body?.appId || null; // Optional appId
@@ -498,7 +498,7 @@ router.post("/withdraw-nft/:guildId", requireGuildAccess, async (req, res) => {
 });
 
 // POST /api/prizepool/verify-nft/:guildId
-router.post("/verify-nft/:guildId", requireGuildAccess, async (req, res) => {
+router.post("/verify-nft/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId } = req.params;
     const appId = req.query.appId || req.body?.appId || null; // Optional appId
@@ -545,7 +545,7 @@ router.post("/verify-nft/:guildId", requireGuildAccess, async (req, res) => {
 });
 
 // GET /api/prizepool/nft-balances/:guildId
-router.get("/nft-balances/:guildId", requireGuildAccess, async (req, res) => {
+router.get("/nft-balances/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
   try {
     const { guildId } = req.params;
     const appId = req.query.appId || null; // Optional appId
