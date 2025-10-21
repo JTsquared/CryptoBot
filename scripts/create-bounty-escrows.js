@@ -36,9 +36,9 @@ const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
 
 // Guild and app info
-const GUILD_ID = '1304108977113665547';
+const GUILD_ID = '1243983776024101005';
 const APP_ID = '1243747782691524680';
-const TOKEN = 'DISH';
+const TOKEN = 'VPND';
 
 // Bounty data - winner gets the bounty
 const BOUNTIES = [
