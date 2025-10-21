@@ -638,4 +638,71 @@ router.post("/nft-metadata", async (req, res) => {
   }
 });
 
+// POST /api/prizepool/transfer
+// Transfer tokens between two prize pools (e.g., when a city falls in ServerWars)
+// SECURITY: This endpoint is ONLY for internal bot-to-bot transfers on the same VM
+router.post("/transfer", requireAppId, async (req, res) => {
+  try {
+    // SECURITY CHECK 1: Only allow localhost connections
+    const clientIP = req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.connection.remoteAddress;
+    const LOCALHOST_IPS = ['127.0.0.1', '::1', '::ffff:127.0.0.1'];
+    const isLocalhost = LOCALHOST_IPS.some(ip => clientIP.includes(ip));
+
+    if (!isLocalhost) {
+      console.error(`🚨 SECURITY ALERT: Prize pool transfer attempt from non-localhost IP: ${clientIP}`);
+      return res.status(403).json({ success: false, error: "FORBIDDEN_EXTERNAL_ACCESS" });
+    }
+
+    // SECURITY CHECK 2: Require shared secret token
+    const { fromGuildId, toGuildId, ticker, amount, transferSecret } = req.body;
+    const appId = req.query.appId || req.body?.appId || null;
+
+    const EXPECTED_SECRET = process.env.PRIZE_POOL_TRANSFER_SECRET;
+    if (!EXPECTED_SECRET) {
+      console.error("🚨 SECURITY ERROR: PRIZE_POOL_TRANSFER_SECRET not configured");
+      return res.status(500).json({ success: false, error: "SERVER_MISCONFIGURED" });
+    }
+
+    if (transferSecret !== EXPECTED_SECRET) {
+      console.error(`🚨 SECURITY ALERT: Invalid transfer secret from ${clientIP} for guilds ${fromGuildId} -> ${toGuildId}`);
+      return res.status(403).json({ success: false, error: "INVALID_SECRET" });
+    }
+
+    if (!fromGuildId || !toGuildId || !ticker || !amount) {
+      return res.status(400).json({ success: false, error: "MISSING_PARAMS" });
+    }
+
+    if (!appId) {
+      return res.status(400).json({ success: false, error: "MISSING_APP_ID" });
+    }
+
+    // Log transfer for audit trail
+    console.log(`🔒 [SECURE TRANSFER] ${ticker} ${amount} from guild ${fromGuildId} to ${toGuildId} (appId: ${appId})`);
+
+    const result = await prizePoolService.transferBetweenPrizePools(
+      fromGuildId,
+      toGuildId,
+      appId,
+      ticker,
+      amount
+    );
+
+    if (!result.success) {
+      if (result.error === "NO_SOURCE_WALLET") return res.status(404).json(result);
+      if (result.error === "NO_DESTINATION_WALLET") return res.status(404).json(result);
+      if (result.error === "INSUFFICIENT_FUNDS") return res.status(400).json(result);
+      if (result.error === "INSUFFICIENT_GAS") return res.status(400).json(result);
+      if (result.error === "UNKNOWN_TOKEN") return res.status(400).json(result);
+      if (result.error === "NETWORK_ERROR") return res.status(503).json(result);
+      return res.status(500).json(result);
+    }
+
+    console.log(`✅ [SECURE TRANSFER SUCCESS] TX: ${result.txHash}`);
+    return res.json(result);
+  } catch (err) {
+    console.error("Prize pool transfer route error:", err);
+    return res.status(500).json({ success: false, error: "SERVER_ERROR" });
+  }
+});
+
 export default router;

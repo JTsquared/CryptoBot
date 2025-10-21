@@ -19,6 +19,7 @@ import fs from "fs";
 import path from "path";
 import mongoose from "mongoose";
 import prizePoolRoutes from "./api/prizePoolRoutes.js";
+import globalAppWalletRoutes from "./api/globalAppWalletRoutes.js";
 import express from "express";
 
 
@@ -230,6 +231,56 @@ app.use("/api/prizepool", async (req, res, next) => {
 
 // Mount your API routes
 app.use("/api/prizepool", prizePoolRoutes);
+
+// Global wallet routes - simpler auth (localhost bypass only, no guild-specific validation)
+app.use("/api/globalwallet", async (req, res, next) => {
+  const clientIP = req.ip || req.headers['x-forwarded-for']?.split(',')[0] || req.connection.remoteAddress;
+  const LOCALHOST_IPS = ['127.0.0.1', '::1', '::ffff:127.0.0.1'];
+  const isLocalhost = LOCALHOST_IPS.some(ip => clientIP.includes(ip));
+
+  if (isLocalhost) {
+    return next();
+  }
+
+  // External requests require API key (but don't need guild validation)
+  const apiKey = req.headers['x-api-key'];
+  if (!apiKey) {
+    console.warn(`🚨 BLOCKED: External request to global wallet API from ${clientIP} - No API key provided`);
+    return res.status(401).json({
+      success: false,
+      error: 'Unauthorized - API key required for external access'
+    });
+  }
+
+  try {
+    const { default: ApiKey } = await import('./database/models/apiKey.js');
+    const crypto = await import('crypto');
+    const keyHash = crypto.default.createHash('sha256').update(apiKey).digest('hex');
+    const apiKeyRecord = await ApiKey.findOne({ keyHash: keyHash, isActive: true });
+
+    if (!apiKeyRecord) {
+      console.warn(`🚨 BLOCKED: External request to global wallet API from ${clientIP} - Invalid API key`);
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized - Invalid or revoked API key'
+      });
+    }
+
+    apiKeyRecord.lastUsedAt = new Date();
+    await apiKeyRecord.save();
+
+    console.log(`✅ API key authenticated for global wallet access from ${clientIP}`);
+    next();
+  } catch (error) {
+    console.error('Error validating API key:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error during authentication'
+    });
+  }
+});
+
+app.use("/api/globalwallet", globalAppWalletRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {

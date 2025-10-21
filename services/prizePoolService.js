@@ -1400,4 +1400,116 @@ async payout(guildId, appId = null, recipientDiscordId, toAddress, ticker, amoun
   async withdrawNFT(senderDiscordId, toAddress, collection, tokenId, guildId, appId = null) {
     return this.withdrawNFTFromPrizePool(senderDiscordId, toAddress, collection, tokenId, guildId, appId);
   }
+
+  /**
+   * Transfer tokens from one prize pool to another (e.g., when a city falls in ServerWars)
+   * @param {string} fromGuildId - Source guild ID (losing nation)
+   * @param {string} toGuildId - Destination guild ID (winning nation)
+   * @param {string} appId - Application ID (for multi-bot support)
+   * @param {string} ticker - Token ticker (e.g., "SQRD", "AVAX")
+   * @param {string|number} amount - Amount to transfer
+   * @returns {Promise<Object>}
+   */
+  async transferBetweenPrizePools(fromGuildId, toGuildId, appId, ticker, amount) {
+    const TOKEN_MAP = getTokenMap();
+
+    // Get source and destination prize pool wallets
+    const fromWallet = await this.getPrizePoolWallet(fromGuildId, appId);
+    if (!fromWallet) {
+      return { success: false, error: "NO_SOURCE_WALLET" };
+    }
+
+    const toWallet = await this.getPrizePoolWallet(toGuildId, appId);
+    if (!toWallet) {
+      return { success: false, error: "NO_DESTINATION_WALLET" };
+    }
+
+    try {
+      const provider = this.provider;
+      const decryptedKey = await decrypt(fromWallet.privateKey);
+      const signer = new ethers.Wallet(decryptedKey, provider);
+
+      const feeData = await provider.getFeeData();
+      if (!feeData || !feeData.gasPrice) {
+        return { success: false, error: "NETWORK_ERROR" };
+      }
+      const gasPrice = feeData.gasPrice;
+
+      console.log(`Prize pool transfer requested: ${amount} ${ticker} from guild ${fromGuildId} to guild ${toGuildId}`);
+
+      let tx;
+      if (isNativeToken(ticker)) {
+        // Native token transfer (AVAX)
+        const amountWei = ethers.parseEther(String(amount));
+        const balance = await provider.getBalance(fromWallet.address);
+
+        if (balance < amountWei) {
+          return { success: false, error: "INSUFFICIENT_FUNDS" };
+        }
+
+        const gasEstimate = await provider.estimateGas({
+          to: toWallet.address,
+          from: fromWallet.address,
+          value: amountWei
+        });
+
+        const gasCost = gasEstimate * gasPrice;
+        if (balance < amountWei + gasCost) {
+          return { success: false, error: "INSUFFICIENT_FUNDS" };
+        }
+
+        tx = await signer.sendTransaction({
+          to: toWallet.address,
+          value: amountWei,
+          gasPrice,
+          gasLimit: gasEstimate
+        });
+      } else {
+        // ERC-20 token transfer
+        const contractAddress = TOKEN_MAP[ticker];
+        if (!contractAddress) {
+          return { success: false, error: "UNKNOWN_TOKEN" };
+        }
+
+        const contract = new ethers.Contract(contractAddress, ERC20_ABI, signer);
+        const decimals = Number(await contract.decimals());
+        const amountWei = ethers.parseUnits(String(amount), decimals);
+
+        const balance = await contract.balanceOf(fromWallet.address);
+        if (balance < amountWei) {
+          return { success: false, error: "INSUFFICIENT_FUNDS" };
+        }
+
+        // Check pool has AVAX for gas
+        const gasEstimate = await contract.transfer.estimateGas(toWallet.address, amountWei);
+        const gasCost = gasEstimate * gasPrice;
+        const avaxBalance = await provider.getBalance(fromWallet.address);
+
+        if (avaxBalance < gasCost) {
+          return { success: false, error: "INSUFFICIENT_GAS" };
+        }
+
+        tx = await contract.transfer(toWallet.address, amountWei, {
+          gasPrice,
+          gasLimit: gasEstimate
+        });
+      }
+
+      await tx.wait();
+
+      console.log(`✅ Prize pool transfer successful: ${amount} ${ticker} from guild ${fromGuildId} to guild ${toGuildId} - TX: ${tx.hash}`);
+
+      return {
+        success: true,
+        txHash: tx.hash,
+        amount: String(amount),
+        ticker,
+        fromGuildId,
+        toGuildId
+      };
+    } catch (err) {
+      console.error("Prize pool transfer error:", err);
+      return { success: false, error: "TX_FAILED", detail: err.message };
+    }
+  }
 }
