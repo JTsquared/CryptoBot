@@ -16,11 +16,15 @@ export class PrizePoolService {
   }
 
   async getOrCreateWallet(guildId, appId = null) {
+    console.log(`[PRIZE POOL SERVICE] getOrCreateWallet called with guildId: ${guildId}, appId: ${appId}`);
+
     // Check if wallet already exists (with or without appId)
     let existing;
     if (appId) {
+      console.log(`[PRIZE POOL SERVICE] Checking for existing wallet with appId: ${appId}`);
       existing = await PrizePoolWallet.findOne({ guildId, appId });
     } else {
+      console.log(`[PRIZE POOL SERVICE] Checking for legacy wallet without appId`);
       // Legacy: Find wallet without appId field
       existing = await PrizePoolWallet.findOne({
         guildId,
@@ -29,6 +33,7 @@ export class PrizePoolService {
     }
 
     if (existing) {
+      console.log(`[PRIZE POOL SERVICE] Wallet already exists: ${existing.address}`);
       return {
         success: false,
         error: "WALLET_ALREADY_EXISTS",
@@ -36,7 +41,10 @@ export class PrizePoolService {
       };
     }
 
+    console.log(`[PRIZE POOL SERVICE] No existing wallet found, creating new wallet...`);
     const { address, pk } = generateWallet();
+    console.log(`[PRIZE POOL SERVICE] Generated wallet address: ${address}`);
+
     const walletData = {
       guildId,
       address,
@@ -48,7 +56,9 @@ export class PrizePoolService {
       walletData.appId = appId;
     }
 
+    console.log(`[PRIZE POOL SERVICE] Saving wallet to database...`);
     const newWallet = await PrizePoolWallet.create(walletData);
+    console.log(`[PRIZE POOL SERVICE] Successfully created wallet: ${newWallet.address}`);
     return { success: true, wallet: newWallet };
   }
 

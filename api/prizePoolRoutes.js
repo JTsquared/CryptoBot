@@ -23,12 +23,45 @@ import NFTInventory from "../database/models/nftInventory.js";
 import { ethers } from "ethers";
 import Wallet from "../database/models/wallet.js";
 import { requireGuildAccess, requireAppId } from "../middleware/validateGuildAccess.js";
+import { encrypt } from "../utils/encryption.js";
 
 const router = express.Router();
 const provider = new ethers.JsonRpcProvider(process.env.AVALANCHE_RPC);
 console.log("AVALANCHE_RPC from env:", process.env.AVALANCHE_RPC);
 
 const prizePoolService = new PrizePoolService(provider);
+
+/**
+ * Helper function to get or auto-create a wallet for a Discord user
+ * @param {string} recipientDiscordId - Discord user ID
+ * @returns {Promise<{success: boolean, address?: string, walletCreated?: boolean, error?: string}>}
+ */
+async function getOrCreateRecipientWallet(recipientDiscordId) {
+  try {
+    // Check if wallet already exists
+    let walletDoc = await Wallet.findOne({ discordId: recipientDiscordId });
+
+    if (walletDoc) {
+      return { success: true, address: walletDoc.address, walletCreated: false };
+    }
+
+    // Auto-create wallet if it doesn't exist
+    const newWallet = ethers.Wallet.createRandom();
+    const encryptedPrivateKey = await encrypt(newWallet.privateKey);
+
+    walletDoc = new Wallet({
+      discordId: recipientDiscordId,
+      address: newWallet.address,
+      privateKey: encryptedPrivateKey
+    });
+
+    await walletDoc.save();
+
+    return { success: true, address: walletDoc.address, walletCreated: true };
+  } catch (error) {
+    return { success: false, error: "WALLET_CREATION_FAILED", detail: error.message };
+  }
+}
 
 //create wallet
 router.post("/create/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
@@ -173,14 +206,24 @@ router.post("/payout/:guildId", requireGuildAccess, requireAppId, async (req, re
     const { guildId } = req.params;
     const appId = req.query.appId || req.body?.appId || null; // Optional appId
     let { toAddress, recipientDiscordId, ticker, amount } = req.body;
+    let walletCreated = false;
 
-    // If Discord ID is provided, resolve it to a wallet address
+    // If Discord ID is provided, resolve it to a wallet address (auto-create if needed)
     if (recipientDiscordId && !toAddress) {
-      const walletDoc = await Wallet.findOne({ discordId: recipientDiscordId });
-      if (!walletDoc) {
-        return res.status(404).json({ success: false, error: "NO_SENDER_WALLET" });
+      const walletResult = await getOrCreateRecipientWallet(recipientDiscordId);
+
+      if (!walletResult.success) {
+        console.error(`[PAYOUT] Failed to get/create wallet for ${recipientDiscordId}:`, walletResult.error);
+        // Fall back to creating escrow if wallet creation fails
+        return res.status(500).json({ success: false, error: walletResult.error });
       }
-      toAddress = walletDoc.address;
+
+      toAddress = walletResult.address;
+      walletCreated = walletResult.walletCreated;
+
+      if (walletCreated) {
+        console.log(`[PAYOUT] Auto-created wallet for ${recipientDiscordId}, attempting payout to ${toAddress}`);
+      }
     }
 
     if (!toAddress) {
@@ -197,7 +240,8 @@ router.post("/payout/:guildId", requireGuildAccess, requireAppId, async (req, re
       return res.status(500).json({ success: false, error: "SERVER_ERROR" });
     }
 
-    return res.json(out);
+    // Include walletCreated flag in response
+    return res.json({ ...out, walletCreated });
   } catch (err) {
     console.error("Payout route error:", err);
     return res.status(500).json({ success: false, error: "SERVER_ERROR" });
@@ -294,6 +338,47 @@ router.post("/escrow/create/:guildId", requireGuildAccess, requireAppId, async (
 
   } catch (err) {
     console.error("Error in escrow creation route:", err);
+    return res.status(500).json({ success: false, error: "SERVER_ERROR" });
+  }
+});
+
+// GET /api/prizepool/escrow/list/:guildId
+router.get("/escrow/list/:guildId", requireGuildAccess, requireAppId, async (req, res) => {
+  try {
+    const { guildId } = req.params;
+    const appId = req.query.appId || null;
+
+    // Build match query for escrow - filter by guildId, optionally appId, and unclaimed only
+    const escrowMatch = { guildId, claimed: false };
+    if (appId) {
+      escrowMatch.appId = appId;
+    } else {
+      // Legacy: no appId field
+      escrowMatch.appId = { $exists: false };
+    }
+
+    const escrows = await PrizeEscrow.find(escrowMatch).sort({ createdAt: -1 });
+
+    if (escrows.length === 0) {
+      return res.json({ success: true, error: "NO_ESCROWS", escrows: [] });
+    }
+
+    // Format escrows for response
+    const formattedEscrows = escrows.map(e => ({
+      discordId: e.discordId,
+      token: e.token,
+      amount: e.amount,
+      isNFT: e.isNFT || false,
+      contractAddress: e.contractAddress || null,
+      tokenId: e.tokenId || null,
+      nftName: e.nftName || null,
+      nftImageUrl: e.nftImageUrl || null,
+      createdAt: e.createdAt
+    }));
+
+    return res.json({ success: true, escrows: formattedEscrows });
+  } catch (err) {
+    console.error("Error in /escrow/list:", err);
     return res.status(500).json({ success: false, error: "SERVER_ERROR" });
   }
 });
@@ -406,14 +491,24 @@ router.post("/payout-nft/:guildId", requireGuildAccess, requireAppId, async (req
     const { guildId } = req.params;
     const appId = req.query.appId || req.body?.appId || null; // Optional appId
     let { toAddress, recipientDiscordId, collection, tokenId } = req.body;
+    let walletCreated = false;
 
-    // If Discord ID is provided, resolve it to a wallet address
+    // If Discord ID is provided, resolve it to a wallet address (auto-create if needed)
     if (recipientDiscordId && !toAddress) {
-      const walletDoc = await Wallet.findOne({ discordId: recipientDiscordId });
-      if (!walletDoc) {
-        return res.status(404).json({ success: false, error: "NO_RECIPIENT_WALLET" });
+      const walletResult = await getOrCreateRecipientWallet(recipientDiscordId);
+
+      if (!walletResult.success) {
+        console.error(`[NFT-PAYOUT] Failed to get/create wallet for ${recipientDiscordId}:`, walletResult.error);
+        // Fall back to creating escrow if wallet creation fails
+        return res.status(500).json({ success: false, error: walletResult.error });
       }
-      toAddress = walletDoc.address;
+
+      toAddress = walletResult.address;
+      walletCreated = walletResult.walletCreated;
+
+      if (walletCreated) {
+        console.log(`[NFT-PAYOUT] Auto-created wallet for ${recipientDiscordId}, attempting NFT payout to ${toAddress}`);
+      }
     }
 
     if (!toAddress || !collection || !tokenId) {
@@ -449,7 +544,7 @@ router.post("/payout-nft/:guildId", requireGuildAccess, requireAppId, async (req
     }
 
     console.log(`Successfully paid out NFT ${collection} #${tokenId} to ${toAddress}`);
-    return res.json(result);
+    return res.json({ ...result, walletCreated });
   } catch (err) {
     console.error("NFT payout route error:", err);
     return res.status(500).json({ success: false, error: "SERVER_ERROR" });

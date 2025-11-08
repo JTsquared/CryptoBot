@@ -99,7 +99,8 @@ export default {
 
         // Get token decimals
         const decimals = await tokenContract.decimals();
-        const amountWei = ethers.parseUnits(amount.toFixed(20), decimals);
+        // const amountWei = ethers.parseUnits(amount.toFixed(20), decimals);
+        const amountWei = ethers.parseUnits(amount.toString(), decimals);
 
         // Check token balance
         const tokenBalance = await tokenContract.balanceOf(senderWalletDoc.address);
@@ -137,12 +138,12 @@ export default {
         });
       }
 
-      const displayAmount = amount.toFixed(20).replace(/\.?0+$/, '');
+      // const displayAmount = amount.toFixed(20).replace(/\.?0+$/, '');
 
       // Create success embed
       const embed = new EmbedBuilder()
         .setColor(0x00ff99)
-        .setDescription(`**${interaction.user.username}** tipped **${recipientUser.username}** ${displayAmount} ${tokenTicker}!`)
+        .setDescription(`**${interaction.user.username}** tipped **${recipientUser.username}** ${amount} ${tokenTicker}!`)
         .setTimestamp();
 
       // Send public message to channel (independent of the interaction)
